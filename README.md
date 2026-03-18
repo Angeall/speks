@@ -6,6 +6,7 @@
 
 **Interactive Functional Analysis Generator** — turn pseudo-code and Markdown specifications into a live, testable documentation website.
 
+[![PyPI](https://img.shields.io/pypi/v/pyspeks.svg)](https://pypi.org/project/pyspeks/)
 [![CI](https://github.com/Angeall/speks/actions/workflows/ci.yml/badge.svg)](https://github.com/Angeall/speks/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-yellow.svg)](LICENSE)
