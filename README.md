@@ -8,7 +8,8 @@
 
 [![CI](https://github.com/Angeall/speks/actions/workflows/ci.yml/badge.svg)](https://github.com/Angeall/speks/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/Website-Speks-orange)](https://speks.cloud)
 
 ## Why Speks?
 
