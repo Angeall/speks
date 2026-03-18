@@ -1,0 +1,113 @@
+# Traefik overlay — exposes 4 demo instances + PlantUML + website
+# behind Traefik (already running on the traefik-servicenet network).
+#
+# Usage:
+#   cp .env.example .env   # fill in your domain names
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+
+services:
+  # ── Website (landing page) ──────────────────────────────────────────
+  website:
+    build:
+      args:
+        VITE_DEMO_URL: https://${DOMAIN_CREDIT}
+    ports: !override []
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-website.rule=Host(`${DOMAIN_WEBSITE}`)
+      - traefik.http.routers.speks-website.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-website.loadbalancer.server.port=80
+
+  # ── Demo: Credit Evaluation ─────────────────────────────────────────
+  demo-credit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXAMPLE_DIR: examples/credit-evaluation
+        PLANTUML_URL: https://${DOMAIN_PLANTUML}/plantuml
+    depends_on:
+      - plantuml
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-demo-credit.rule=Host(`${DOMAIN_CREDIT}`)
+      - traefik.http.routers.speks-demo-credit.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-demo-credit.loadbalancer.server.port=8000
+
+  # ── Demo: Order Processing ──────────────────────────────────────────
+  demo-order:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXAMPLE_DIR: examples/order-processing
+        PLANTUML_URL: https://${DOMAIN_PLANTUML}/plantuml
+    depends_on:
+      - plantuml
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-demo-order.rule=Host(`${DOMAIN_ORDER}`)
+      - traefik.http.routers.speks-demo-order.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-demo-order.loadbalancer.server.port=8000
+
+  # ── Demo: Patient Eligibility ───────────────────────────────────────
+  demo-patient:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXAMPLE_DIR: examples/patient-eligibility
+        PLANTUML_URL: https://${DOMAIN_PLANTUML}/plantuml
+    depends_on:
+      - plantuml
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-demo-patient.rule=Host(`${DOMAIN_PATIENT}`)
+      - traefik.http.routers.speks-demo-patient.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-demo-patient.loadbalancer.server.port=8000
+
+  # ── Demo: Shipping Calculator ───────────────────────────────────────
+  demo-shipping:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXAMPLE_DIR: examples/shipping-calculator
+        PLANTUML_URL: https://${DOMAIN_PLANTUML}/plantuml
+    depends_on:
+      - plantuml
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-demo-shipping.rule=Host(`${DOMAIN_SHIPPING}`)
+      - traefik.http.routers.speks-demo-shipping.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-demo-shipping.loadbalancer.server.port=8000
+
+  # ── PlantUML Server ─────────────────────────────────────────────────
+  plantuml:
+    ports: !override []
+    networks:
+      - traefik-servicenet
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.speks-plantuml.rule=Host(`${DOMAIN_PLANTUML}`)
+      - traefik.http.routers.speks-plantuml.tls.certresolver=tlschallenge
+      - traefik.http.services.speks-plantuml.loadbalancer.server.port=8080
+
+  # ── Remove the original demo service (replaced by the 4 above) ─────
+  demo:
+    profiles:
+      - disabled
+
+networks:
+  traefik-servicenet:
+    external: true
