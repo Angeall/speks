@@ -1,0 +1,28 @@
+@startuml
+actor Customer
+participant "Order System" as sys
+participant "Warehouse" as wh
+participant "Product Catalog" as cat
+participant "Customer Service" as cs
+participant "Payment Gateway" as pay
+
+Customer -> sys : process_order(items, payment)
+
+loop For each item
+    sys -> wh : CheckInventory(product_id)
+    wh --> sys : {available, stock}
+end
+
+sys -> cat : FetchProductCatalog(product_id)
+cat --> sys : {name, base_price}
+
+sys -> cs : FetchCustomerTier(customer_id)
+cs --> sys : {tier: "gold", discount: 10%}
+
+sys -> sys : Calculate total with discounts
+
+sys -> pay : ProcessPayment(amount)
+pay --> sys : {status: "captured", txn_id}
+
+sys --> Customer : Order CONFIRMED
+@enduml

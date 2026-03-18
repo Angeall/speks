@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+.git
+.idea
+.pytest_cache
+.mypy_cache
+.ruff_cache
+site/
+website/
+plantuml-server/
+examples/order-processing/
+examples/patient-eligibility/
+examples/shipping-calculator/
+node_modules/
+*.egg-info

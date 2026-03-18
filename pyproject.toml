@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "speks"
+version = "0.2.0"
+description = "Interactive Functional Analysis Generator"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Speks Team"},
+]
+dependencies = [
+    "pydantic>=2.0",
+    "typer>=0.9",
+    "rich>=13.0",
+    "markdown>=3.5",
+    "tomli>=2.0; python_version < '3.12'",
+    "uvicorn>=0.24",
+    "fastapi>=0.104",
+    "watchfiles>=0.21",
+    "mkdocs>=1.5",
+    "mkdocs<2.0",
+    "mkdocs-material>=9.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "httpx>=0.24",
+    "mypy>=1.7",
+    "ruff>=0.8",
+    "pre-commit>=3.0",
+]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+speks = "speks.cli:app"
+
+[project.entry-points."mkdocs.plugins"]
+speks-tags = "speks.mkdocs_plugins.tags:SpeksTagsPlugin"
+speks-playground = "speks.mkdocs_plugins.playground:SpeksPlaygroundPlugin"
+speks-dependencies = "speks.mkdocs_plugins.dependencies:SpeksDependenciesPlugin"
+speks-plantuml = "speks.mkdocs_plugins.plantuml:SpeksPlantUMLPlugin"
+speks-sequence = "speks.mkdocs_plugins.sequence:SpeksSequencePlugin"
+speks-versioning = "speks.mkdocs_plugins.versioning:SpeksVersioningPlugin"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["speks*"]
+
+[tool.setuptools.package-data]
+speks = ["assets/*"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.coverage.run]
+source = ["speks"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

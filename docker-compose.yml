@@ -1,0 +1,23 @@
+services:
+  website:
+    build:
+      context: website
+      args:
+        VITE_DEMO_URL: ${DEMO_URL:-http://demo.localhost:8000}
+    ports:
+      - "80:80"
+
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - plantuml
+
+  plantuml:
+    build:
+      context: plantuml-server
+    ports:
+      - "8080:8080"

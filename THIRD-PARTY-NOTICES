@@ -1,0 +1,119 @@
+Third-Party Software Notices and Licenses
+=========================================
+
+This file lists the third-party libraries used by Speks (SpecWeaver),
+along with their respective licenses. All listed licenses are compatible
+with the Apache License 2.0 under which this project is distributed.
+
+
+Runtime Dependencies
+--------------------
+
+pydantic (>= 2.0)
+  License: MIT
+  Home: https://github.com/pydantic/pydantic
+
+typer (>= 0.9)
+  License: MIT
+  Home: https://github.com/fastapi/typer
+
+rich (>= 13.0)
+  License: MIT
+  Home: https://github.com/Textualize/rich
+
+markdown (>= 3.5)
+  License: BSD-3-Clause
+  Home: https://github.com/Python-Markdown/markdown
+
+uvicorn (>= 0.24)
+  License: BSD-3-Clause
+  Home: https://github.com/encode/uvicorn
+
+fastapi (>= 0.104)
+  License: MIT
+  Home: https://github.com/fastapi/fastapi
+
+watchfiles (>= 0.21)
+  License: MIT
+  Home: https://github.com/samuelcolvin/watchfiles
+
+mkdocs (>= 1.5, < 2.0)
+  License: BSD-2-Clause
+  Home: https://github.com/mkdocs/mkdocs
+
+mkdocs-material (>= 9.4)
+  License: MIT
+  Home: https://github.com/squidfunk/mkdocs-material
+
+
+Development Dependencies
+-------------------------
+
+pytest (>= 7.0)
+  License: MIT
+  Home: https://github.com/pytest-dev/pytest
+
+pytest-cov (>= 4.0)
+  License: MIT
+  Home: https://github.com/pytest-dev/pytest-cov
+
+mypy (>= 1.7)
+  License: MIT
+  Home: https://github.com/python/mypy
+
+ruff (>= 0.8)
+  License: MIT
+  Home: https://github.com/astral-sh/ruff
+
+pre-commit (>= 3.0)
+  License: MIT
+  Home: https://github.com/pre-commit/pre-commit
+
+
+Build / Packaging Dependencies
+-------------------------------
+
+pyinstaller (>= 6.0)
+  License: GPL-2.0-or-later (with bootloader exception)
+  Home: https://github.com/pyinstaller/pyinstaller
+  Note: The PyInstaller bootloader exception permits distributing
+        binaries built with PyInstaller under any license. PyInstaller
+        is used only as a build tool; it is NOT distributed with Speks.
+
+Build Dependencies
+------------------
+
+setuptools (>= 68.0)
+  License: MIT
+  Home: https://github.com/pypa/setuptools
+
+wheel
+  License: MIT
+  Home: https://github.com/pypa/wheel
+
+
+License Summaries
+-----------------
+
+MIT License:
+  Permission is hereby granted, free of charge, to any person obtaining
+  a copy of this software and associated documentation files, to deal
+  in the Software without restriction, including without limitation the
+  rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, subject to the condition that the
+  above copyright notice and permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+BSD-2-Clause License:
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are
+  met: (1) Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+  (2) Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+
+BSD-3-Clause License:
+  Same as BSD-2-Clause, with the additional condition that the name of
+  the copyright holder may not be used to endorse or promote products
+  derived from this software without specific prior written permission.

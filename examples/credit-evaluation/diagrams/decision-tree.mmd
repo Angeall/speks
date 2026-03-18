@@ -1,0 +1,13 @@
+flowchart TD
+    A[Client Request] --> B{Balance Check}
+    B -->|Balance > Amount| C{Credit Score Check}
+    B -->|Balance <= Amount| D[DENIED: Insufficient balance]
+    C -->|Score >= Threshold| E{Incident Check}
+    C -->|Score < Threshold| F[DENIED: Score too low]
+    E -->|No incidents| G[APPROVED]
+    E -->|Has incidents| H[DENIED: Incidents detected]
+
+    style G fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    style D fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style F fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style H fill:#ffcdd2,stroke:#c62828,color:#b71c1c

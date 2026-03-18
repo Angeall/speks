@@ -1,0 +1,27 @@
+@startuml
+actor Shipper
+participant "Shipping System" as sys
+participant "Geo Service" as geo
+participant "Carrier API" as carrier
+participant "Warehouse" as wh
+participant "Customs API" as customs
+
+Shipper -> sys : estimate_delivery(product_id, dest_zip)
+
+sys -> wh : CheckWarehouseStock(product_id, dest_zip)
+wh --> sys : {in_stock, warehouse_zip, processing_days}
+
+sys -> geo : FetchZoneMapping(warehouse_zip, dest_zip)
+geo --> sys : {zone, cross_border}
+
+alt Cross-border shipment
+    sys -> customs : CheckCustomsClearance(origin, dest, value)
+    customs --> sys : {clearance_days, restricted}
+end
+
+sys -> carrier : FetchCarrierRates(zone, weight, service)
+carrier --> sys : {base_rate, fuel_surcharge}
+
+sys -> sys : Calculate total cost & delivery estimate
+sys --> Shipper : {total, delivery_days}
+@enduml

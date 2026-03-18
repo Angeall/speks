@@ -1,0 +1,11 @@
+[project]
+name = "Order Processing System"
+src_dir = "src"
+docs_dir = "docs"
+diagrams_dir = "diagrams"
+output_dir = "site"
+theme_color = "#E91E63"
+serve_port = 8000
+locale = "en"
+testcases_dir = "testcases"
+git_revisions = 3

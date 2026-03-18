@@ -1,0 +1,13 @@
+flowchart TD
+    A[New Order] --> B[Check Inventory]
+    B -->|All in stock| C[Calculate Pricing]
+    B -->|Items unavailable| D[ORDER REJECTED]
+    C --> E[Apply Volume Discounts]
+    E --> F[Apply Loyalty Discount]
+    F --> G[Process Payment]
+    G -->|Payment OK| H[ORDER CONFIRMED]
+    G -->|Payment Failed| I[PAYMENT FAILED]
+
+    style H fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    style D fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style I fill:#fff3e0,stroke:#e65100,color:#bf360c

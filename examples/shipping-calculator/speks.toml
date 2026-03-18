@@ -1,0 +1,11 @@
+[project]
+name = "Shipping Calculator"
+src_dir = "src"
+docs_dir = "docs"
+diagrams_dir = "diagrams"
+output_dir = "site"
+theme_color = "#FF9800"
+serve_port = 8000
+locale = "en"
+testcases_dir = "testcases"
+git_revisions = 3

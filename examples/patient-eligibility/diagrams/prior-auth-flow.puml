@@ -1,0 +1,30 @@
+@startuml
+actor Provider
+participant "Eligibility System" as sys
+participant "EHR" as ehr
+participant "Insurance Payer" as ins
+participant "Clinical DB" as cdb
+
+Provider -> sys : evaluate_prior_auth(patient_id, procedure)
+
+sys -> ehr : FetchPatientRecord(patient_id)
+ehr --> sys : {age, conditions, member_id}
+
+sys -> ins : VerifyInsuranceCoverage(member_id, procedure)
+ins --> sys : {active, plan, covered_services}
+
+alt Insurance not active
+    sys --> Provider : DENIED: Insurance not active
+else
+    sys -> cdb : CheckClinicalGuidelines(procedure, conditions)
+    cdb --> sys : {medically_necessary, guideline}
+
+    alt Not medically necessary
+        sys --> Provider : DENIED: Not medically necessary
+    else
+        sys -> ins : SubmitPriorAuth(request)
+        ins --> sys : {auth_id, status: "approved"}
+        sys --> Provider : APPROVED: auth_id
+    end
+end
+@enduml

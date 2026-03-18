@@ -1,0 +1,15 @@
+flowchart TD
+    A[Patient Request] --> B[Fetch Patient Record]
+    B --> C[Verify Insurance]
+    C -->|Active| D{Service Covered?}
+    C -->|Inactive| E[NOT ELIGIBLE]
+    D -->|Yes| F[Calculate Cost]
+    D -->|No| G[NOT COVERED]
+    F --> H{Deductible Met?}
+    H -->|Yes| I[Patient pays copay only]
+    H -->|No| J[Patient pays deductible + copay]
+
+    style E fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style G fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style I fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    style J fill:#fff3e0,stroke:#e65100,color:#bf360c

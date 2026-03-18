@@ -1,0 +1,20 @@
+flowchart TD
+    A[Shipping Request] --> B[Lookup Zone]
+    B --> C{Cross-border?}
+    C -->|Yes| D[Check Customs]
+    C -->|No| E[Get Carrier Rates]
+    D -->|Restricted| F[CANNOT SHIP]
+    D -->|Clear| E
+    E --> G[Base Rate]
+    G --> H[+ Fuel Surcharge 8%]
+    H --> I{Weight > 5kg?}
+    I -->|Yes| J[+ Weight Surcharge]
+    I -->|No| K[No weight surcharge]
+    J --> L{Zone > 3?}
+    K --> L
+    L -->|Yes| M[+ Zone Surcharge]
+    L -->|No| N[Final Total]
+    M --> N
+
+    style F fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style N fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20

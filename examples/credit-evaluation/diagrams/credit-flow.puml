@@ -1,0 +1,19 @@
+@startuml
+actor Client
+participant "System" as sys
+participant "Core Banking" as bank
+participant "Credit Bureau" as credit
+
+Client -> sys : evaluate_credit_advanced(client_id, amount)
+sys -> bank : CheckClientBalance(client_id)
+bank --> sys : balance = 1500.0
+
+alt balance > amount
+    sys -> credit : CheckCreditHistory(client_id)
+    credit --> sys : {score: 720, incidents: 0}
+    sys -> sys : evaluate score & incidents
+    sys --> Client : {approved: true, ...}
+else balance <= amount
+    sys --> Client : {approved: false, reason: "Insufficient balance"}
+end
+@enduml

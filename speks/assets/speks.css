@@ -1,0 +1,534 @@
+/* ==========================================================================
+   Speks – Widget Styles
+   ==========================================================================
+   Shared CSS for all Speks widgets (contract tables, playground, PlantUML).
+   Rules use ``var(--md-*, fallback)`` so they adapt to the MkDocs Material
+   theme when present and fall back to sensible defaults in standalone
+   rendering.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Common styles
+   -------------------------------------------------------------------------- */
+.md-logo img { height: 3rem !important; }
+
+/* --------------------------------------------------------------------------
+   Contract table widget
+   -------------------------------------------------------------------------- */
+
+.speks-contract {
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-left: 4px solid var(--md-accent-fg-color, #448aff);
+  border-radius: 6px;
+  padding: 1.2rem;
+  margin: 1.5rem 0;
+  background: var(--md-default-bg-color, #fff);
+}
+.speks-contract-title {
+  margin-top: 0 !important;
+  margin-bottom: .4rem;
+  color: var(--md-accent-fg-color, #448aff);
+}
+.speks-contract-doc {
+  font-style: italic;
+  color: #666;
+  margin-bottom: .8rem;
+}
+.speks-contract-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .72rem;
+}
+.speks-contract-table th,
+.speks-contract-table td {
+  padding: .45rem .7rem;
+  text-align: left;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+}
+.speks-contract-table th {
+  font-weight: 600;
+  color: var(--md-default-fg-color, #212121);
+  background: var(--md-code-bg-color, #f5f5f5);
+}
+.speks-contract-section {
+  background: var(--md-accent-fg-color, #448aff) !important;
+  color: #fff !important;
+  font-size: .65rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.speks-contract-table td code {
+  background: var(--md-code-bg-color, #f5f5f5);
+  padding: .1rem .35rem;
+  border-radius: 3px;
+  font-size: .68rem;
+}
+/* Nested structured types (Pydantic / dataclass unfolding) */
+.speks-contract-nested {
+  padding: 0 !important;
+  border-bottom: none !important;
+}
+.speks-contract-type-details {
+  margin: .3rem 0 .3rem .8rem;
+  border-left: 3px solid var(--md-accent-fg-color, #448aff);
+  padding-left: .6rem;
+}
+.speks-contract-type-details summary {
+  cursor: pointer;
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--md-accent-fg-color, #448aff);
+  padding: .2rem 0;
+}
+.speks-contract-type-details summary code {
+  font-weight: 700;
+}
+.speks-contract-type-doc {
+  font-weight: 400;
+  color: #888;
+  font-size: .62rem;
+  margin-left: .4rem;
+}
+.speks-contract-nested-table {
+  margin: .3rem 0;
+  font-size: .68rem;
+}
+.speks-contract-nested-table th {
+  font-size: .6rem;
+}
+
+/* --------------------------------------------------------------------------
+   Playground widget
+   -------------------------------------------------------------------------- */
+
+.speks-playground-widget {
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-left: 4px solid var(--md-primary-fg-color, #1976D2);
+  border-radius: 6px;
+  padding: 1.2rem;
+  margin: 1.5rem 0;
+  background: var(--md-default-bg-color, #fff);
+}
+.speks-playground-widget > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.speks-playground-widget > summary::-webkit-details-marker { display: none; }
+.speks-playground-widget > summary h4 {
+  display: inline;
+  margin: 0;
+  color: var(--md-primary-fg-color, #1976D2);
+}
+.speks-playground-widget > summary::before {
+  content: "\25b6";
+  display: inline-block;
+  margin-right: .5rem;
+  font-size: .7rem;
+  transition: transform .15s;
+  color: var(--md-primary-fg-color, #1976D2);
+}
+.speks-playground-widget[open] > summary::before {
+  transform: rotate(90deg);
+}
+.speks-playground-widget h4 {
+  margin-top: 0 !important;
+  margin-bottom: .8rem;
+  color: var(--md-primary-fg-color, #1976D2);
+}
+.speks-doc { font-style: italic; color: #666; margin-bottom: .8rem; }
+.speks-source-details { margin-bottom: 1rem; }
+.speks-source-details summary {
+  cursor: pointer;
+  color: var(--md-primary-fg-color, #1976D2);
+  font-weight: 500;
+}
+.speks-field { margin-bottom: .6rem; }
+.speks-field label { display: block; font-weight: 500; margin-bottom: .2rem; }
+.speks-required { color: #c62828; font-weight: 700; }
+.speks-field input {
+  width: 100%;
+  padding: .45rem .6rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 6px;
+  font-size: .75rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+}
+.speks-run-btn {
+  margin-top: .5rem;
+  padding: .55rem 1.4rem;
+  background: var(--md-primary-fg-color, #1976D2);
+  color: var(--md-primary-bg-color, #fff);
+  border: none;
+  border-radius: 6px;
+  font-size: .75rem;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.speks-run-btn:hover { opacity: .85; }
+.speks-run-btn:disabled { opacity: .45; cursor: not-allowed; }
+.speks-result {
+  margin-top: .8rem;
+  padding: .8rem;
+  border-radius: 6px;
+  font-family: var(--md-code-font-family, monospace);
+  white-space: pre-wrap;
+  display: none;
+}
+.speks-result.success { display: block; background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; }
+.speks-result.error   { display: block; background: #ffebee; border: 1px solid #ef9a9a; color: #b71c1c; }
+
+/* Mock configuration */
+.speks-mock-config {
+  margin: 1rem 0;
+  border: 1px dashed var(--md-primary-fg-color--light, #90caf9);
+  border-radius: 6px;
+  padding: .8rem;
+  background: var(--md-code-bg-color, #f5f5f5);
+}
+.speks-mock-config summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--md-primary-fg-color, #1976D2);
+  margin-bottom: .5rem;
+}
+.speks-mock-field { margin-bottom: .6rem; }
+.speks-mock-field label { display: block; font-weight: 500; margin-bottom: .2rem; font-size: .7rem; }
+.speks-mock-field label em { font-weight: 400; color: #888; font-size: .65rem; }
+.speks-mock-input {
+  width: 100%;
+  min-height: 2.2rem;
+  padding: .4rem .6rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 6px;
+  font-family: var(--md-code-font-family, monospace);
+  font-size: .68rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+  resize: vertical;
+}
+.speks-mock-input.invalid { border-color: #c62828; background: #fff5f5; }
+
+/* Pydantic structured mock fields */
+.speks-mock-pydantic {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: .4rem;
+  margin-top: .2rem;
+}
+.speks-mock-pydantic-field label {
+  display: block;
+  font-size: .65rem;
+  font-weight: 500;
+  margin-bottom: .15rem;
+}
+.speks-mock-pydantic-field label code { font-size: .6rem; color: #888; }
+.speks-mock-pydantic-input {
+  width: 100%;
+  padding: .35rem .5rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 5px;
+  font-size: .7rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+}
+
+/* Error mock toggle */
+.speks-error-mock {
+  margin-top: .4rem;
+  padding: .4rem .6rem;
+  border: 1px dashed #ef9a9a;
+  border-radius: 4px;
+  background: #fff8f8;
+}
+.speks-error-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: .3rem;
+  font-size: .65rem;
+  font-weight: 500 !important;
+  color: #c62828;
+  cursor: pointer;
+}
+.speks-error-toggle input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+.speks-error-input {
+  width: 100%;
+  min-height: 2rem;
+  padding: .35rem .5rem;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  font-family: var(--md-code-font-family, monospace);
+  font-size: .65rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+  resize: vertical;
+  margin-top: .3rem;
+}
+
+/* Structured error fields */
+.speks-error-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: .4rem;
+  margin-top: .3rem;
+}
+.speks-error-field label {
+  display: block;
+  font-size: .6rem;
+  font-weight: 500;
+  margin-bottom: .1rem;
+  color: #c62828;
+}
+.speks-error-field-input {
+  width: 100%;
+  padding: .3rem .5rem;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  font-size: .65rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+}
+.speks-error-field-input:disabled {
+  opacity: .5;
+  background: #fafafa;
+}
+.speks-error-input:disabled { opacity: .4; }
+.speks-error-input.invalid { border-color: #c62828; background: #fff5f5; }
+
+/* Test cases panel */
+.speks-testcases {
+  margin-top: 1rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 6px;
+  padding: .8rem;
+  background: var(--md-code-bg-color, #f5f5f5);
+}
+.speks-testcases summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--md-primary-fg-color, #1976D2);
+  margin-bottom: .4rem;
+}
+.speks-tc-list { list-style: none; padding: 0; margin: .4rem 0 0; }
+.speks-tc-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .35rem .5rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  font-size: .75rem;
+}
+.speks-tc-item:last-child { border-bottom: none; }
+.speks-tc-name { flex: 1; font-weight: 500; }
+.speks-tc-badge {
+  font-size: .65rem; font-weight: 700; padding: .1rem .4rem;
+  border-radius: 3px; text-transform: uppercase;
+}
+.speks-tc-badge.pass { background: #c8e6c9; color: #1b5e20; }
+.speks-tc-badge.fail { background: #ffcdd2; color: #b71c1c; }
+.speks-tc-btn {
+  padding: .2rem .6rem;
+  font-size: .65rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 4px;
+  background: var(--md-default-bg-color, #fff);
+  cursor: pointer;
+  color: var(--md-default-fg-color, #212121);
+}
+.speks-tc-btn:hover { background: var(--md-default-fg-color--lightest, #e0e0e0); }
+.speks-tc-btn.danger { color: #c62828; border-color: #ef9a9a; }
+.speks-tc-btn.danger:hover { background: #ffebee; }
+.speks-tc-actions { margin-top: .5rem; display: flex; gap: .4rem; }
+.speks-tc-save-btn {
+  padding: .35rem .8rem;
+  font-size: .7rem;
+  border: 1px dashed var(--md-primary-fg-color, #1976D2);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--md-primary-fg-color, #1976D2);
+  cursor: pointer;
+}
+.speks-tc-save-btn:hover { background: rgba(25, 118, 210, .08); }
+.speks-tc-save-btn:disabled { opacity: .4; cursor: not-allowed; }
+.speks-tc-summary {
+  margin-top: .4rem;
+  font-size: .7rem;
+  font-weight: 600;
+}
+.speks-tc-summary.all-pass { color: #1b5e20; }
+.speks-tc-summary.has-fail { color: #b71c1c; }
+
+/* --------------------------------------------------------------------------
+   PlantUML diagrams
+   -------------------------------------------------------------------------- */
+
+.speks-plantuml-diagram {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+.speks-plantuml-diagram img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 6px;
+  padding: .5rem;
+  background: #fff;
+}
+.speks-plantuml-fallback pre {
+  text-align: left;
+}
+.speks-plantuml-source {
+  margin-top: .5rem;
+  text-align: left;
+}
+.speks-plantuml-source summary {
+  cursor: pointer;
+  color: var(--md-primary-fg-color, #1976D2);
+  font-weight: 500;
+  font-size: .85rem;
+}
+
+/* --------------------------------------------------------------------------
+   Version selector
+   -------------------------------------------------------------------------- */
+
+.speks-version-selector {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-left: auto;
+  padding: 0 .8rem;
+}
+.speks-version-select {
+  padding: .3rem .5rem;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .15);
+  color: var(--md-primary-bg-color, #fff);
+  font-size: .7rem;
+  cursor: pointer;
+  max-width: 350px;
+}
+.speks-version-select option {
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+}
+.speks-compare-btn {
+  padding: .3rem .7rem;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .15);
+  color: var(--md-primary-bg-color, #fff);
+  font-size: .65rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.speks-compare-btn:hover {
+  background: rgba(255, 255, 255, .25);
+}
+
+/* --------------------------------------------------------------------------
+   Diff overlay / dialog
+   -------------------------------------------------------------------------- */
+
+.speks-diff-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.speks-diff-dialog {
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+  border-radius: 8px;
+  width: 92vw;
+  max-width: 1400px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .3);
+}
+.speks-diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .8rem 1.2rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+}
+.speks-diff-header h3 {
+  margin: 0;
+  font-size: .9rem;
+}
+.speks-diff-close {
+  border: none;
+  background: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--md-default-fg-color, #212121);
+  padding: 0 .3rem;
+  line-height: 1;
+}
+.speks-diff-close:hover { opacity: .6; }
+.speks-diff-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .8rem 1.2rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  flex-wrap: wrap;
+}
+.speks-diff-controls label {
+  font-size: .75rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+.speks-diff-controls select {
+  padding: .3rem .5rem;
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 4px;
+  font-size: .7rem;
+  background: var(--md-default-bg-color, #fff);
+  color: var(--md-default-fg-color, #212121);
+  max-width: 320px;
+}
+.speks-diff-run-btn {
+  padding: .35rem .8rem;
+  background: var(--md-primary-fg-color, #1976D2);
+  color: var(--md-primary-bg-color, #fff);
+  border: none;
+  border-radius: 4px;
+  font-size: .7rem;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.speks-diff-run-btn:hover { opacity: .85; }
+.speks-diff-result {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.2rem;
+  min-height: 200px;
+}
+.speks-diff-result p {
+  text-align: center;
+  color: #666;
+  font-size: .8rem;
+}
+.speks-diff-error {
+  color: #c62828 !important;
+}
+/* Override diff2html styles for better integration */
+.speks-diff-result .d2h-wrapper {
+  font-size: .75rem;
+}
+.speks-diff-result .d2h-file-header {
+  display: none;
+}
