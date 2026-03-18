@@ -24,7 +24,7 @@ No more stale specs. No more "the doc says X but the code does Y". Your document
 ## Quick Start
 
 ```bash
-pip install speks
+pip install pyspeks
 speks init my-project
 cd my-project
 speks serve
