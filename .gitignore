@@ -24,3 +24,6 @@ _build/
 !speks/assets/*.svg
 **/.gradle
 **/gradle/wrapper
+.idea
+.claude
+examples/**/speks.css
