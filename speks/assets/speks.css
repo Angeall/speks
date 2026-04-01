@@ -11,6 +11,11 @@
    Common styles
    -------------------------------------------------------------------------- */
 .md-logo img { height: 3rem !important; }
+.md-grid {
+  margin-left: 0px;
+  margin-right: 0px;
+  max-width: unset;
+}
 
 /* --------------------------------------------------------------------------
    Contract table widget
@@ -90,6 +95,8 @@
   margin-left: .4rem;
 }
 .speks-contract-field-comment {
+  display: table-caption;
+  width: 200%;
   font-weight: 400;
   color: #888;
   font-size: .85em;

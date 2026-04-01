@@ -27,6 +27,11 @@ class CheckClientBalance(ExternalService):
     component_name = "CoreBanking"
 
     def execute(self, client_id: str) -> ClientBalance:
+        """
+        Calls backend to check client's balance
+        :param client_id: The param representing the client
+        :return: The balance of the customer
+        """
         pass  # type: ignore[return-value]
 
     def mock(self, client_id: str) -> MockResponse:
@@ -89,7 +94,7 @@ class CreditDecision(BaseModel):
     reasons: list[str] = []  # Reasons for denial, if any
 
 
-def evaluate_credit_advanced(client_id: str, amount: float, score_threshold: int = 600) -> CreditDecision:
+def evaluate_credit_advanced(client_id: str, amount: float, score_threshold: int = 600) -> Optional[CreditDecision]:
     """Advanced evaluation combining balance and credit score.
 
     :param client_id: Unique identifier of the client
