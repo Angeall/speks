@@ -325,6 +325,62 @@ def extract_structured_types(source_path: Path) -> dict[str, StructuredTypeInfo]
     return result
 
 
+def resolve_import_files(source_path: Path, root: Path) -> list[Path]:
+    """Follow ``from ... import`` statements to find files that may define types.
+
+    Handles both relative imports (``from .models import X``) and absolute
+    imports resolved against *root* (the project workspace root, typically
+    containing a ``src/`` directory).
+
+    Returns a list of resolved :class:`Path` objects that exist on disk.
+    """
+    source_text = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source_text, filename=str(source_path))
+    result: list[Path] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            resolved = _resolve_module_to_path(
+                node.module, node.level or 0, source_path, root,
+            )
+            if resolved is not None and resolved.exists():
+                result.append(resolved)
+    return result
+
+
+def _resolve_module_to_path(
+    module: str, level: int, source_path: Path, root: Path,
+) -> Path | None:
+    """Convert a module string to a file path.
+
+    *level* is the number of leading dots (0 = absolute, 1 = current package, etc.).
+    """
+    parts = module.replace(".", "/")
+
+    if level > 0:
+        # Relative import — go up *level* directories from the source file's dir.
+        base = source_path.parent
+        for _ in range(level - 1):
+            base = base.parent
+    else:
+        # Absolute import — try relative to root, then root/src.
+        base = root
+        candidate = base / f"{parts}.py"
+        if not candidate.exists():
+            candidate = base / parts / "__init__.py"
+        if not candidate.exists():
+            # Try under root/src/ which is the common convention
+            base = root / "src"
+
+    candidate = base / f"{parts}.py"
+    if candidate.exists():
+        return candidate.resolve()
+    # Could be a package directory with __init__.py
+    candidate = base / parts / "__init__.py"
+    if candidate.exists():
+        return candidate.resolve()
+    return None
+
+
 def extract_all_functions(source_path: Path) -> list[FunctionInfo]:
     """Extract all top-level functions from a Python file."""
     source_text = source_path.read_text(encoding="utf-8")

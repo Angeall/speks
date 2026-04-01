@@ -27,6 +27,7 @@ from speks.core.code_extractor import (
     extract_function,
     extract_structured_types,
     parse_tag_arg,
+    resolve_import_files,
 )
 from speks.core.testcases import load_testcases
 from speks.i18n import t
@@ -119,20 +120,80 @@ def resolve_mermaid(arg: str, root: Path) -> str:
 
 
 def _collect_structured_types(file_path: Path, root: Path) -> dict[str, StructuredTypeInfo]:
-    """Collect structured types from the source file and its src/ siblings."""
+    """Collect structured types from the source file, its siblings, and imported files.
+
+    The function follows ``from ... import`` statements recursively so that
+    nested Pydantic models defined in sub-packages are discovered.
+    """
     types: dict[str, StructuredTypeInfo] = {}
-    try:
-        types.update(extract_structured_types(file_path))
-    except Exception:
-        pass
-    # Also scan sibling .py files in the same directory
+    seen_files: set[Path] = set()
+
+    # Seed the queue with the target file and its sibling .py files
+    queue: list[Path] = [file_path.resolve()]
     for sibling in file_path.parent.glob("*.py"):
-        if sibling != file_path:
-            try:
-                types.update(extract_structured_types(sibling))
-            except Exception:
-                pass
+        resolved = sibling.resolve()
+        if resolved != file_path.resolve():
+            queue.append(resolved)
+
+    while queue:
+        current = queue.pop()
+        if current in seen_files:
+            continue
+        seen_files.add(current)
+        try:
+            types.update(extract_structured_types(current))
+            # Follow imports from this file to discover types in other modules
+            for imported in resolve_import_files(current, root):
+                if imported not in seen_files:
+                    queue.append(imported)
+        except Exception:
+            pass
+
+    # Second pass: detect classes that inherit from an already-found
+    # structured type (e.g. class A(B) where B(BaseModel)).
+    _resolve_indirect_structured_types(types, seen_files)
+
     return types
+
+
+def _resolve_indirect_structured_types(
+    types: dict[str, StructuredTypeInfo],
+    scanned_files: set[Path],
+) -> None:
+    """Find classes whose base is an already-known structured type.
+
+    For example ``class A(B)`` where ``B`` was already found as a BaseModel
+    subclass.  This mutates *types* in place.
+    """
+    import ast as _ast
+
+    for fpath in scanned_files:
+        try:
+            source_text = fpath.read_text(encoding="utf-8")
+            tree = _ast.parse(source_text, filename=str(fpath))
+            source_lines = source_text.splitlines()
+        except Exception:
+            continue
+
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ClassDef):
+                continue
+            if node.name in types:
+                continue  # already known
+            # Check if any base class is an already-known structured type
+            for base in node.bases:
+                base_name = _ast.unparse(base).rsplit(".", 1)[-1]
+                if base_name in types:
+                    from speks.core.code_extractor import _extract_class_fields
+                    fields = _extract_class_fields(node, source_lines)
+                    if fields:
+                        types[node.name] = StructuredTypeInfo(
+                            name=node.name,
+                            fields=fields,
+                            docstring=_ast.get_docstring(node),
+                            base_classes=[_ast.unparse(b) for b in node.bases],
+                        )
+                    break
 
 
 def resolve_contract(arg: str, root: Path, *, mode: Mode = "mkdocs") -> str:

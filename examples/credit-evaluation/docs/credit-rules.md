@@ -52,6 +52,33 @@ The advanced rule combines balance and credit score.
 
 ---
 
+## Premium Evaluation (nested models from sub-packages)
+
+This version uses deeply nested Pydantic models imported from a `models/` sub-package.
+The contract table recursively unfolds `ClientProfile` → `Address` and shows the full type hierarchy.
+
+### Contract
+
+@[contract](src/nested_credit.py:evaluate_premium_credit)
+
+### Data Models
+
+@[code](src/models/address.py:Address)
+
+@[code](src/models/client.py:ClientProfile)
+
+@[code](src/models/risk.py:RiskAssessment)
+
+### Source Code
+
+@[code](src/nested_credit.py:evaluate_premium_credit)
+
+### Try it Live
+
+@[playground](src/nested_credit.py:evaluate_premium_credit)
+
+---
+
 ## Typed Evaluation (with Pydantic/Dataclass models)
 
 This version uses structured types for inputs and outputs. The contract table below lets you **unfold** each type to see its internal structure.

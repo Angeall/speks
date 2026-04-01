@@ -178,6 +178,50 @@ class TestExtractStructuredTypes:
         assert cfg.fields[1].comment is None
 
 
+class TestResolveImportFiles:
+    def test_follows_relative_import(self, tmp_path: Path) -> None:
+        from speks.core.code_extractor import resolve_import_files
+
+        src = tmp_path / "src"
+        sub = src / "sub"
+        sub.mkdir(parents=True)
+        (src / "__init__.py").write_text("", encoding="utf-8")
+        (sub / "__init__.py").write_text("", encoding="utf-8")
+        (sub / "types.py").write_text(
+            "from pydantic import BaseModel\nclass B(BaseModel):\n    x: int\n",
+            encoding="utf-8",
+        )
+        main = src / "main.py"
+        main.write_text(
+            "from .sub.types import B\n",
+            encoding="utf-8",
+        )
+        files = resolve_import_files(main, tmp_path)
+        assert any(f.name == "types.py" for f in files)
+
+    def test_ignores_missing_module(self, tmp_path: Path) -> None:
+        from speks.core.code_extractor import resolve_import_files
+
+        src = tmp_path / "src"
+        src.mkdir()
+        main = src / "main.py"
+        main.write_text("from .nonexistent import Foo\n", encoding="utf-8")
+        files = resolve_import_files(main, tmp_path)
+        assert files == []
+
+    def test_follows_absolute_import_under_src(self, tmp_path: Path) -> None:
+        from speks.core.code_extractor import resolve_import_files
+
+        src = tmp_path / "src"
+        sub = src / "sub"
+        sub.mkdir(parents=True)
+        (sub / "models.py").write_text("x = 1\n", encoding="utf-8")
+        main = src / "entry.py"
+        main.write_text("from sub.models import x\n", encoding="utf-8")
+        files = resolve_import_files(main, tmp_path)
+        assert any(f.name == "models.py" for f in files)
+
+
 class TestParseTagArg:
     def test_file_only(self) -> None:
         assert parse_tag_arg("src/file.py") == ("src/file.py", None, "")

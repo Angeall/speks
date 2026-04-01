@@ -397,6 +397,89 @@ class TestResolveContract:
         assert "Montant demandé" in result
 
 
+    def test_unfolds_nested_type_from_subdirectory(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        sub = src / "sub"
+        sub.mkdir(parents=True)
+        (sub / "__init__.py").write_text("", encoding="utf-8")
+        (sub / "types.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class Inner(BaseModel):\n'
+            '    value: int\n',
+            encoding="utf-8",
+        )
+        (src / "__init__.py").write_text("", encoding="utf-8")
+        (src / "main.py").write_text(
+            'from pydantic import BaseModel\n'
+            'from .sub.types import Inner\n\n'
+            'class Outer(BaseModel):\n'
+            '    inner: Inner\n'
+            '    label: str\n\n'
+            'def process(data: Outer) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/main.py:process", tmp_path)
+        assert "speks-contract-type-details" in result
+        assert "Outer" in result
+        assert "Inner" in result
+        assert "value" in result
+
+    def test_unfolds_transitive_nested_types(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        sub = src / "sub"
+        sub.mkdir(parents=True)
+        (sub / "__init__.py").write_text("", encoding="utf-8")
+        (sub / "deep.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class C(BaseModel):\n'
+            '    z: str\n',
+            encoding="utf-8",
+        )
+        (sub / "mid.py").write_text(
+            'from pydantic import BaseModel\n'
+            'from .deep import C\n\n'
+            'class B(BaseModel):\n'
+            '    x: int\n'
+            '    c: C\n',
+            encoding="utf-8",
+        )
+        (src / "__init__.py").write_text("", encoding="utf-8")
+        (src / "entry.py").write_text(
+            'from pydantic import BaseModel\n'
+            'from .sub.mid import B\n\n'
+            'class A(BaseModel):\n'
+            '    b: B\n'
+            '    y: int\n\n'
+            'def run(a: A) -> str:\n'
+            '    return "ok"\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/entry.py:run", tmp_path)
+        assert result.count("speks-contract-type-details") == 3
+        assert "A" in result
+        assert "B" in result
+        assert "C" in result
+
+    def test_unfolds_type_inheriting_from_model(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "inherit.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class Base(BaseModel):\n'
+            '    x: int\n\n'
+            'class Child(Base):\n'
+            '    y: str\n\n'
+            'def check(c: Child) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/inherit.py:check", tmp_path)
+        assert "speks-contract-type-details" in result
+        assert "Child" in result
+        assert "y" in result
+
+
 class TestPlaygroundPlugin:
     def test_injects_js(self) -> None:
         plugin = SpeksPlaygroundPlugin()
