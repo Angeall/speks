@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.1] — 2026-04-01
+
+### Added
+
+- Read more comments to document function in website
+- Better rendering of nested Pydantic models in playground
+- Fullscreen mode for website for better readability
+
+### Fixed
+
+- Fixed `speks serve --develop` to avoid infinite loop
+
 ## [0.1.0] — 2026-03-18
 
 ### Added
