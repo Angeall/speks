@@ -379,6 +379,85 @@ def _contract_html(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_type_name(type_str: str, structured_types: dict[str, StructuredTypeInfo]) -> StructuredTypeInfo | None:
+    """Find a StructuredTypeInfo for a type string, stripping wrappers."""
+    if not type_str or not structured_types:
+        return None
+    for candidate in (type_str, _strip_generic_wrapper(type_str) or ""):
+        short = candidate.rsplit(".", 1)[-1]
+        if short in structured_types:
+            return structured_types[short]
+    return None
+
+
+def _build_structured_fields(
+    param_name: str,
+    type_info: StructuredTypeInfo,
+    structured_types: dict[str, StructuredTypeInfo],
+    qualified_name: str,
+    path_prefix: str,
+    *,
+    seen: set[str] | None = None,
+    indent: int = 2,
+) -> str:
+    """Recursively build HTML input fields for a structured Pydantic/dataclass type."""
+    if seen is None:
+        seen = set()
+    if type_info.name in seen:
+        return ""
+    seen = seen | {type_info.name}
+
+    pad = "  " * indent
+    comment_html = ""
+    if type_info.docstring:
+        comment_html = f' <em class="speks-contract-field-comment">{html_mod.escape(type_info.docstring)}</em>'
+    html = (
+        f'{pad}<fieldset class="speks-structured-group" data-param="{html_mod.escape(path_prefix)}">\n'
+        f'{pad}  <legend>{html_mod.escape(param_name)} '
+        f'<code>({html_mod.escape(type_info.name)})</code>{comment_html}</legend>\n'
+    )
+
+    for f in type_info.fields:
+        f_path = f"{path_prefix}.{f.name}"
+        f_id = f"speks-{qualified_name}-{f_path}"
+        f_ann = f.annotation or "str"
+        f_comment = ""
+        if f.comment:
+            f_comment = f' <em class="speks-contract-field-comment">{html_mod.escape(f.comment)}</em>'
+
+        # Check if this field is itself a structured type
+        nested_type = _resolve_type_name(f_ann, structured_types)
+        if nested_type and nested_type.name not in seen:
+            html += _build_structured_fields(
+                f.name, nested_type, structured_types, qualified_name,
+                f_path, seen=seen, indent=indent + 1,
+            )
+        else:
+            # Determine the base type for the input (strip Optional/Union wrappers)
+            bare = _strip_generic_wrapper(f_ann) or f_ann
+            input_type = "number" if bare in ("int", "float") else "text"
+            if bare == "bool":
+                input_type = "text"  # use text; user enters true/false
+            step = 'step="any"' if bare == "float" else ""
+            default_val = html_mod.escape(f.default) if f.default else ""
+            req_attr = "required" if f.required else ""
+            req_mark = ' <span class="speks-required">*</span>' if f.required else ""
+            html += (
+                f'{pad}  <div class="speks-field">'
+                f'<label for="{f_id}">'
+                f'{f.name} <code>({html_mod.escape(f_ann)})</code>{req_mark}{f_comment}</label>'
+                f'<input id="{f_id}" '
+                f'class="speks-structured-input" '
+                f'data-path="{html_mod.escape(f_path)}" '
+                f'type="{input_type}" {step} '
+                f'value="{default_val}" placeholder="{f.name}" {req_attr}>'
+                f"</div>\n"
+            )
+
+    html += f"{pad}</fieldset>\n"
+    return html
+
+
 def resolve_playground(arg: str, root: Path, *, mode: Mode = "mkdocs") -> str:
     """``@[playground](file.py:func)`` or ``@[playground](file.py:Class:method)``."""
     file_part, class_name, func_name = parse_tag_arg(arg)
@@ -407,23 +486,32 @@ def resolve_playground(arg: str, root: Path, *, mode: Mode = "mkdocs") -> str:
 
     # ----- HTML widget (mkdocs / standalone) -----
 
+    structured_types = _collect_structured_types(file_path, root)
+
     fields = ""
     for p in info.parameters:
         ann = p.annotation or "str"
-        default = p.default or ""
-        input_type = "number" if ann in ("int", "float") else "text"
-        step = 'step="any"' if ann == "float" else ""
-        required_attr = "required" if p.default is None else ""
-        required_mark = ' <span class="speks-required">*</span>' if p.default is None else ""
-        fields += (
-            f'  <div class="speks-field">'
-            f'<label for="speks-{qualified_name}-{p.name}">'
-            f'{p.name} <code>({ann})</code>{required_mark}</label>'
-            f'<input id="speks-{qualified_name}-{p.name}" '
-            f'name="{p.name}" type="{input_type}" {step} '
-            f'value="{default}" placeholder="{p.name}" {required_attr}>'
-            f"</div>\n"
-        )
+        # Check if this parameter is a structured (Pydantic/dataclass) type
+        type_info = _resolve_type_name(ann, structured_types)
+        if type_info:
+            fields += _build_structured_fields(
+                p.name, type_info, structured_types, qualified_name, p.name,
+            )
+        else:
+            default = p.default or ""
+            input_type = "number" if ann in ("int", "float") else "text"
+            step = 'step="any"' if ann == "float" else ""
+            required_attr = "required" if p.default is None else ""
+            required_mark = ' <span class="speks-required">*</span>' if p.default is None else ""
+            fields += (
+                f'  <div class="speks-field">'
+                f'<label for="speks-{qualified_name}-{p.name}">'
+                f'{p.name} <code>({ann})</code>{required_mark}</label>'
+                f'<input id="speks-{qualified_name}-{p.name}" '
+                f'name="{p.name}" type="{input_type}" {step} '
+                f'value="{default}" placeholder="{p.name}" {required_attr}>'
+                f"</div>\n"
+            )
 
     mock_fields = _build_mock_fields(file_path, root, qualified_name)
 

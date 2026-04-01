@@ -13,6 +13,7 @@ import inspect
 import json
 import sys
 import types
+import typing
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
@@ -61,6 +62,14 @@ from speks.engine.mocking import (
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
+
+
+def _is_pydantic_model(ann: Any) -> bool:
+    """Return True if *ann* is a Pydantic BaseModel subclass."""
+    try:
+        return isinstance(ann, type) and issubclass(ann, BaseModel)
+    except TypeError:
+        return False
 
 
 class RunRequest(BaseModel):
@@ -138,17 +147,28 @@ def create_app(project_root: Path, site_dir: Path) -> FastAPI:
         # Coerce arguments to match annotations (safe types only)
         _SAFE_COERCE_TYPES = (int, float, str, bool, list, dict, tuple)
         sig = inspect.signature(func)
+        # Resolve string annotations (from __future__ import annotations)
+        try:
+            resolved_hints = typing.get_type_hints(func)
+        except Exception:
+            resolved_hints = {}
         coerced: dict[str, object] = {}
         for name, param in sig.parameters.items():
             if name not in req.args:
                 continue
             value = req.args[name]
-            ann = param.annotation
-            if ann is not inspect.Parameter.empty and ann in _SAFE_COERCE_TYPES:
-                try:
-                    value = ann(value)
-                except (TypeError, ValueError):
-                    pass
+            ann = resolved_hints.get(name, param.annotation)
+            if ann is not inspect.Parameter.empty:
+                if ann in _SAFE_COERCE_TYPES:
+                    try:
+                        value = ann(value)
+                    except (TypeError, ValueError):
+                        pass
+                elif isinstance(value, dict) and _is_pydantic_model(ann):
+                    try:
+                        value = ann(**value)
+                    except Exception:
+                        pass
             coerced[name] = value
 
         try:

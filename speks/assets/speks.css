@@ -148,6 +148,24 @@
   color: var(--md-primary-fg-color, #1976D2);
   font-weight: 500;
 }
+/* Nested Pydantic structured input groups */
+.speks-structured-group {
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-left: 3px solid var(--md-accent-fg-color, #448aff);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  margin-bottom: .6rem;
+}
+.speks-structured-group legend {
+  font-weight: 600;
+  font-size: .78rem;
+  padding: 0 .4rem;
+  color: var(--md-default-fg-color, #212121);
+}
+.speks-structured-group .speks-structured-group {
+  border-left-color: var(--md-primary-fg-color, #1976D2);
+  margin-top: .4rem;
+}
 .speks-field { margin-bottom: .6rem; }
 .speks-field label { display: block; font-weight: 500; margin-bottom: .2rem; }
 .speks-required { color: #c62828; font-weight: 700; }

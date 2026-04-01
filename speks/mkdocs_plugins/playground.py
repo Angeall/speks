@@ -62,12 +62,51 @@ document.addEventListener('DOMContentLoaded', function() {{
 }});
 
 /* ── Helpers ── */
+function _swSetPath(obj, path, val) {{
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {{
+    if (!(parts[i] in cur) || typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) {{
+      cur[parts[i]] = {{}};
+    }}
+    cur = cur[parts[i]];
+  }}
+  cur[parts[parts.length - 1]] = val;
+}}
+
+function _swFillStructured(form, prefix, obj) {{
+  if (typeof obj !== 'object' || obj === null) return;
+  Object.entries(obj).forEach(([key, val]) => {{
+    const path = prefix + '.' + key;
+    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {{
+      _swFillStructured(form, path, val);
+    }} else {{
+      const input = form.querySelector('input[data-path="' + path + '"]');
+      if (input) {{
+        input.value = val;
+        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      }}
+    }}
+  }});
+}}
+
 function _swCollectForm(form) {{
   const data = {{}};
-  form.querySelectorAll('input:not(.speks-error-checkbox):not(.speks-mock-pydantic-input):not(.speks-error-field-input)').forEach(input => {{
+  /* Collect plain (non-structured) input fields */
+  form.querySelectorAll('input:not(.speks-error-checkbox):not(.speks-mock-pydantic-input):not(.speks-error-field-input):not(.speks-structured-input)').forEach(input => {{
     let val = input.value;
     if (input.type === 'number') val = Number(val);
     data[input.name] = val;
+  }});
+  /* Collect structured (Pydantic) input fields and assemble nested objects */
+  form.querySelectorAll('input.speks-structured-input').forEach(input => {{
+    const path = input.dataset.path;
+    if (!path) return;
+    let val = input.value;
+    if (input.type === 'number') val = val === '' ? null : Number(val);
+    else if (val === 'true') val = true;
+    else if (val === 'false') val = false;
+    _swSetPath(data, path, val);
   }});
   const mockOverrides = {{}};
   const errorOverrides = {{}};
@@ -266,11 +305,17 @@ function _swFillForm(funcName, tcData) {{
 
   /* Fill input fields */
   if (tcData.inputs) {{
+    /* Plain inputs */
     Object.entries(tcData.inputs).forEach(([key, val]) => {{
-      const input = form.querySelector('input[name="' + key + '"]');
-      if (input) {{
-        input.value = val;
-        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      if (typeof val === 'object' && val !== null) {{
+        /* Structured type — fill via data-path attributes */
+        _swFillStructured(form, key, val);
+      }} else {{
+        const input = form.querySelector('input[name="' + key + '"]');
+        if (input) {{
+          input.value = val;
+          input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        }}
       }}
     }});
   }}
