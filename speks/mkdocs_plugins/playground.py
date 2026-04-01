@@ -479,6 +479,12 @@ class SpeksPlaygroundPlugin(BasePlugin):  # type: ignore[type-arg,no-untyped-cal
             if logo.is_file():
                 theme["favicon"] = "assets/logo.svg"
 
+        # Footer override — prepend packaged overrides to theme dirs
+        overrides_dir = Path(str(assets.joinpath("overrides")))
+        if overrides_dir.is_dir() and hasattr(theme, "dirs"):
+            if str(overrides_dir) not in theme.dirs:
+                theme.dirs.insert(0, str(overrides_dir))
+
         return config
 
     def on_post_page(

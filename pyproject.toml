@@ -55,7 +55,7 @@ where = ["."]
 include = ["speks*"]
 
 [tool.setuptools.package-data]
-speks = ["assets/*"]
+speks = ["assets/*", "assets/overrides/**/*"]
 
 [tool.mypy]
 python_version = "3.11"
