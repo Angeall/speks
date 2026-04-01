@@ -16,26 +16,28 @@ from .credit import CheckClientBalance, CheckCreditHistory, CreditHistory
 class CreditRequest(BaseModel):
     """A structured credit evaluation request."""
 
-    client_id: str
-    amount: float
-    score_threshold: int = 600
-    include_history: bool = True
+    client_id: str  # Unique client identifier
+    amount: float  # Requested credit amount
+    score_threshold: int = 600  # Minimum credit score required
+    include_history: bool = True  # Whether to include credit history check
 
 
 class FullCreditDecision(BaseModel):
     """The full credit evaluation result."""
 
-    approved: bool
-    balance: float
-    history: CreditHistory | None = None
-    reasons: list[str] = []
+    approved: bool  # Whether the credit was approved
+    balance: float  # Client's current balance
+    history: CreditHistory | None = None  # Credit history, if requested
+    reasons: list[str] = []  # Denial reasons, if any
 
 
 def evaluate_credit_typed(request: CreditRequest) -> FullCreditDecision:
     """Evaluate a credit request using structured types.
 
-    Accepts a CreditRequest and returns a FullCreditDecision with full details.
     The contract table will show the structure of both types.
+
+    :param request: Structured credit evaluation request
+    :return: Full decision with approval status and details
     """
     try:
         result = CheckClientBalance().call(request.client_id)

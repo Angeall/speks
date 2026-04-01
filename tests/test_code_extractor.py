@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from speks.core.code_extractor import (
+    _parse_docstring,
     extract_all_functions,
     extract_class,
     extract_function,
@@ -144,6 +145,38 @@ class TestExtractStructuredTypes:
         types = extract_structured_types(sample_file)
         assert "Greeter" not in types
 
+    def test_extracts_inline_comments(self, tmp_path: Path) -> None:
+        code = textwrap.dedent("""\
+            from pydantic import BaseModel
+
+            class Order(BaseModel):
+                item: str  # Product name
+                qty: int  # Quantity ordered
+                price: float = 0.0  # Unit price
+                note: str = ""
+        """)
+        p = tmp_path / "order.py"
+        p.write_text(code, encoding="utf-8")
+        order = extract_structured_types(p)["Order"]
+        assert order.fields[0].comment == "Product name"
+        assert order.fields[1].comment == "Quantity ordered"
+        assert order.fields[2].comment == "Unit price"
+        assert order.fields[3].comment is None
+
+    def test_inline_comment_with_hash_in_string(self, tmp_path: Path) -> None:
+        code = textwrap.dedent("""\
+            from pydantic import BaseModel
+
+            class Config(BaseModel):
+                pattern: str = "a#b"  # A regex pattern
+                plain: str = "hello"
+        """)
+        p = tmp_path / "cfg.py"
+        p.write_text(code, encoding="utf-8")
+        cfg = extract_structured_types(p)["Config"]
+        assert cfg.fields[0].comment == "A regex pattern"
+        assert cfg.fields[1].comment is None
+
 
 class TestParseTagArg:
     def test_file_only(self) -> None:
@@ -200,3 +233,78 @@ class TestExtractMethod:
         # With class_name, finds method
         info = extract_function(p, "run", class_name="Worker")
         assert "method" in info.source
+
+
+class TestParseDocstring:
+    def test_extracts_param_descriptions(self) -> None:
+        doc = "Do something.\n\n:param x: The X value\n:param y: The Y value"
+        clean, params, ret = _parse_docstring(doc)
+        assert clean == "Do something."
+        assert params == {"x": "The X value", "y": "The Y value"}
+        assert ret is None
+
+    def test_extracts_return_description(self) -> None:
+        doc = "Compute it.\n\n:return: The result"
+        clean, params, ret = _parse_docstring(doc)
+        assert clean == "Compute it."
+        assert params == {}
+        assert ret == "The result"
+
+    def test_returns_variant(self) -> None:
+        doc = "Compute.\n\n:returns: The value"
+        _, _, ret = _parse_docstring(doc)
+        assert ret == "The value"
+
+    def test_none_docstring(self) -> None:
+        clean, params, ret = _parse_docstring(None)
+        assert clean is None
+        assert params == {}
+        assert ret is None
+
+    def test_no_param_lines(self) -> None:
+        doc = "Just a description."
+        clean, params, ret = _parse_docstring(doc)
+        assert clean == "Just a description."
+        assert params == {}
+        assert ret is None
+
+    def test_mixed(self) -> None:
+        doc = "Evaluate credit.\n\nChecks balance and score.\n\n:param id: Client ID\n:param amt: Amount\n:return: Approval status"
+        clean, params, ret = _parse_docstring(doc)
+        assert clean == "Evaluate credit.\n\nChecks balance and score."
+        assert params == {"id": "Client ID", "amt": "Amount"}
+        assert ret == "Approval status"
+
+
+class TestExtractFunctionDocstringParsing:
+    def test_param_descriptions_on_parameters(self, tmp_path: Path) -> None:
+        code = textwrap.dedent("""\
+            def calc(x: int, y: int = 0) -> int:
+                \"\"\"Add values.
+
+                :param x: First operand
+                :param y: Second operand
+                :return: Sum of x and y
+                \"\"\"
+                return x + y
+        """)
+        p = tmp_path / "calc.py"
+        p.write_text(code, encoding="utf-8")
+        info = extract_function(p, "calc")
+        assert info.docstring == "Add values."
+        assert info.parameters[0].description == "First operand"
+        assert info.parameters[1].description == "Second operand"
+        assert info.return_description == "Sum of x and y"
+
+    def test_no_param_lines_leaves_none(self, tmp_path: Path) -> None:
+        code = textwrap.dedent("""\
+            def simple(a: int) -> int:
+                \"\"\"Just returns a.\"\"\"
+                return a
+        """)
+        p = tmp_path / "simple.py"
+        p.write_text(code, encoding="utf-8")
+        info = extract_function(p, "simple")
+        assert info.docstring == "Just returns a."
+        assert info.parameters[0].description is None
+        assert info.return_description is None

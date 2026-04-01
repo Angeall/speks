@@ -20,6 +20,7 @@ STRINGS: dict[str, str] = {
     "contract.parameter": "Parameter",
     "contract.type": "Type",
     "contract.default": "Default",
+    "contract.description": "Description",
     "contract.return": "Return",
     "contract.no_params": "No parameters",
     "contract.inputs": "Inputs",

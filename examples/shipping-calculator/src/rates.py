@@ -8,19 +8,19 @@ from speks import ExternalService, MockResponse
 class ZoneInfo(BaseModel):
     """Shipping zone lookup result."""
 
-    zone: int
-    distance_km: int
-    cross_border: bool
-    origin_country: str
-    dest_country: str
+    zone: int  # Shipping zone number (1-8)
+    distance_km: int  # Distance between origin and destination
+    cross_border: bool  # Whether the shipment crosses a border
+    origin_country: str  # Origin country code
+    dest_country: str  # Destination country code
 
 
 class CarrierRate(BaseModel):
     """Carrier rate quote."""
 
-    base_rate: float
-    fuel_surcharge: float
-    carrier: str
+    base_rate: float  # Base shipping rate
+    fuel_surcharge: float  # Fuel surcharge amount
+    carrier: str  # Carrier name
 
 
 class FetchZoneMapping(ExternalService):
@@ -62,15 +62,15 @@ class FetchCarrierRates(ExternalService):
 class ShippingRate(BaseModel):
     """Complete shipping rate breakdown."""
 
-    carrier: str
-    service_level: str
-    zone: int
-    base_rate: float
-    fuel_surcharge: float
-    weight_surcharge: float
-    zone_surcharge: float
-    cross_border_fee: float
-    total: float
+    carrier: str  # Carrier name
+    service_level: str  # Service level (standard, express, overnight)
+    zone: int  # Shipping zone
+    base_rate: float  # Base rate from carrier
+    fuel_surcharge: float  # Fuel surcharge
+    weight_surcharge: float  # Extra charge for heavy packages
+    zone_surcharge: float  # Extra charge for distant zones
+    cross_border_fee: float  # Fee for international shipments
+    total: float  # Total shipping cost
 
 
 def calculate_shipping_rate(
@@ -83,6 +83,12 @@ def calculate_shipping_rate(
 
     Determines the shipping zone, fetches carrier rates,
     and applies weight-based surcharges.
+
+    :param origin_zip: Origin postal code
+    :param dest_zip: Destination postal code
+    :param weight_kg: Package weight in kilograms
+    :param service_level: Delivery speed tier
+    :return: Full rate breakdown with all surcharges
     """
     zone_info = FetchZoneMapping().call(origin_zip, dest_zip)
     carrier = FetchCarrierRates().call(zone_info.zone, weight_kg, service_level)
@@ -127,7 +133,10 @@ class ShippingComparison(BaseModel):
 def compare_shipping_options(origin_zip: str, dest_zip: str, weight_kg: float) -> ShippingComparison:
     """Compare all available shipping options for a route.
 
-    Returns pricing for standard, express, and overnight delivery.
+    :param origin_zip: Origin postal code
+    :param dest_zip: Destination postal code
+    :param weight_kg: Package weight in kilograms
+    :return: Side-by-side comparison with the cheapest option highlighted
     """
     options = []
     for level in ["standard", "express", "overnight"]:

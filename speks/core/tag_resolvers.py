@@ -165,41 +165,74 @@ def _contract_markdown(info: object, func_name: str) -> str:
     for p in info.parameters:  # type: ignore[attr-defined]
         ann = p.annotation or "—"
         default = p.default or "—"
-        rows += f"| `{p.name}` | `{ann}` | {default} |\n"
+        desc = p.description or "—"
+        rows += f"| `{p.name}` | `{ann}` | {default} | {desc} |\n"
 
     if not rows:
-        rows = "| — | — | — |\n"
+        rows = "| — | — | — | — |\n"
 
     ret = info.return_annotation or "—"  # type: ignore[attr-defined]
+    ret_desc = info.return_description or ""  # type: ignore[attr-defined]
+    ret_suffix = f" — {ret_desc}" if ret_desc else ""
 
     return (
         f"**`{func_name}`**\n\n"
-        f"| {t('contract.parameter')} | {t('contract.type')} | {t('contract.default')} |\n"
-        f"|-----------|------|--------|\n"
+        f"| {t('contract.parameter')} | {t('contract.type')} | {t('contract.default')} | {t('contract.description')} |\n"
+        f"|-----------|------|--------|-------------|\n"
         f"{rows}\n"
-        f"**{t('contract.return')}** : `{ret}`\n"
+        f"**{t('contract.return')}** : `{ret}`{ret_suffix}\n"
     )
 
 
 def _strip_generic_wrapper(type_str: str) -> str | None:
-    """Extract the inner type name from ``list[X]``, ``Optional[X]``, etc.
+    """Extract the inner type name from ``list[X]``, ``Optional[X]``, ``X | None``, etc.
 
-    Returns the bare type name if it looks like a known structured type,
-    otherwise ``None``.
+    Recursively strips wrappers so that ``Optional[list[X]]`` yields ``X``.
+    Returns the bare type name, or ``None`` for empty input.
     """
     if not type_str:
         return None
-    # Handle Optional[X], list[X], List[X], etc.
-    inner = type_str
-    for wrapper in ("Optional[", "list[", "List[", "Sequence[", "Set[", "set["):
-        if inner.startswith(wrapper) and inner.endswith("]"):
-            inner = inner[len(wrapper):-1]
+    inner = type_str.strip()
+
+    # Handle PEP 604 union: ``X | None``, ``None | X``, ``X | Y`` (take first non-None)
+    if " | " in inner:
+        parts = [p.strip() for p in inner.split(" | ")]
+        non_none = [p for p in parts if p != "None"]
+        if non_none:
+            inner = non_none[0]
+        else:
+            return inner
+
+    # Handle Union[X, None], Union[X, Y] — take first non-None member
+    for union_prefix in ("Union[", "typing.Union["):
+        if inner.startswith(union_prefix) and inner.endswith("]"):
+            body = inner[len(union_prefix):-1]
+            parts = [p.strip() for p in body.split(",")]
+            non_none = [p for p in parts if p != "None"]
+            if non_none:
+                inner = non_none[0]
             break
+
+    # Repeatedly strip container wrappers: Optional[list[X]] → list[X] → X
+    _WRAPPERS = ("Optional[", "list[", "List[", "Sequence[", "Set[", "set[", "tuple[", "Tuple[", "frozenset[", "FrozenSet[")
+    changed = True
+    while changed:
+        changed = False
+        for wrapper in _WRAPPERS:
+            if inner.startswith(wrapper) and inner.endswith("]"):
+                inner = inner[len(wrapper):-1]
+                # For tuple[X, ...] strip the trailing ", ..."
+                if inner.endswith(", ..."):
+                    inner = inner[:-5]
+                changed = True
+                break
+
     # Handle dict value: dict[str, X] → X
     if inner.startswith(("dict[", "Dict[")):
         parts = inner.split(",", 1)
         if len(parts) == 2:
             inner = parts[1].strip().rstrip("]")
+
     return inner
 
 
@@ -239,10 +272,13 @@ def _type_detail_html(
         f_ann = html_mod.escape(f.annotation or "—")
         f_default = html_mod.escape(f.default) if f.default else "—"
         req_mark = ' <span class="speks-required">*</span>' if f.required else ""
+        comment_html = ""
+        if f.comment:
+            comment_html = f' <em class="speks-contract-field-comment">{html_mod.escape(f.comment)}</em>'
         nested = _type_detail_html(f.annotation or "", structured_types, seen)
         field_rows += (
             f"          <tr>"
-            f"<td><code>{f_name}</code>{req_mark}</td>"
+            f"<td><code>{f_name}</code>{req_mark}{comment_html}</td>"
             f"<td><code>{f_ann}</code></td>"
             f"<td>{f_default}</td>"
             f"</tr>\n"
@@ -280,33 +316,37 @@ def _contract_html(
 ) -> str:
     """HTML-table variant (MkDocs and standalone)."""
     stypes = structured_types or {}
+    ncols = 4
     input_rows = ""
     for p in info.parameters:  # type: ignore[attr-defined]
         name = html_mod.escape(p.name)
         ann = html_mod.escape(p.annotation or "—")
         default = html_mod.escape(p.default) if p.default else "—"
+        desc = html_mod.escape(p.description) if p.description else "—"
         input_rows += (
             f"      <tr>"
             f"<td><code>{name}</code></td>"
             f"<td><code>{ann}</code></td>"
             f"<td>{default}</td>"
+            f"<td>{desc}</td>"
             f"</tr>\n"
         )
         type_detail = _type_detail_html(p.annotation or "", stypes)
         if type_detail:
             input_rows += (
-                f'      <tr><td colspan="3" class="speks-contract-nested">{type_detail}</td></tr>\n'
+                f'      <tr><td colspan="{ncols}" class="speks-contract-nested">{type_detail}</td></tr>\n'
             )
 
     if not input_rows:
-        input_rows = f'      <tr><td colspan="3"><em>{t("contract.no_params")}</em></td></tr>\n'
+        input_rows = f'      <tr><td colspan="{ncols}"><em>{t("contract.no_params")}</em></td></tr>\n'
 
     ret = html_mod.escape(info.return_annotation or "—")  # type: ignore[attr-defined]
+    ret_desc = html_mod.escape(info.return_description) if info.return_description else "—"  # type: ignore[attr-defined]
     ret_type_detail = _type_detail_html(info.return_annotation or "", stypes)  # type: ignore[attr-defined]
     ret_detail_row = ""
     if ret_type_detail:
         ret_detail_row = (
-            f'      <tr><td colspan="3" class="speks-contract-nested">{ret_type_detail}</td></tr>\n'
+            f'      <tr><td colspan="{ncols}" class="speks-contract-nested">{ret_type_detail}</td></tr>\n'
         )
 
     doc_html = ""
@@ -318,16 +358,16 @@ def _contract_html(
   <h4 class="speks-contract-title"><code>{html_mod.escape(func_name)}</code></h4>
 {doc_html}  <table class="speks-contract-table">
     <thead>
-      <tr><th colspan="3" class="speks-contract-section">{t("contract.inputs")}</th></tr>
-      <tr><th>{t("contract.parameter")}</th><th>{t("contract.type")}</th><th>{t("contract.default")}</th></tr>
+      <tr><th colspan="{ncols}" class="speks-contract-section">{t("contract.inputs")}</th></tr>
+      <tr><th>{t("contract.parameter")}</th><th>{t("contract.type")}</th><th>{t("contract.default")}</th><th>{t("contract.description")}</th></tr>
     </thead>
     <tbody>
 {input_rows}    </tbody>
     <thead>
-      <tr><th colspan="3" class="speks-contract-section">{t("contract.output")}</th></tr>
+      <tr><th colspan="{ncols}" class="speks-contract-section">{t("contract.output")}</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>return</code></td><td><code>{ret}</code></td><td>—</td></tr>
+      <tr><td><code>return</code></td><td><code>{ret}</code></td><td>—</td><td>{ret_desc}</td></tr>
 {ret_detail_row}    </tbody>
   </table>
 </div>

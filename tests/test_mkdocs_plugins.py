@@ -297,6 +297,105 @@ class TestResolveContract:
         assert "name" in result
         assert "amount" in result
 
+    def test_unfolds_optional_type(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "opt.py").write_text(
+            'from pydantic import BaseModel\n'
+            'from typing import Optional\n\n'
+            'class Info(BaseModel):\n'
+            '    label: str  # Display label\n'
+            '    value: int\n\n'
+            'def check(info: Optional[Info]) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/opt.py:check", tmp_path)
+        assert "speks-contract-type-details" in result
+        assert "Info" in result
+        assert "label" in result
+        assert "value" in result
+        assert "Display label" in result
+
+    def test_unfolds_union_none_type(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "union.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class Payload(BaseModel):\n'
+            '    data: str  # Raw data\n\n'
+            'def send(p: Payload | None) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/union.py:send", tmp_path)
+        assert "speks-contract-type-details" in result
+        assert "Payload" in result
+        assert "data" in result
+        assert "Raw data" in result
+
+    def test_unfolds_list_of_type(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lst.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class Item(BaseModel):\n'
+            '    name: str\n\n'
+            'def process(items: list[Item]) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/lst.py:process", tmp_path)
+        assert "speks-contract-type-details" in result
+        assert "Item" in result
+        assert "name" in result
+
+    def test_displays_param_descriptions_from_docstring(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "documented.py").write_text(
+            'def check(client_id: str, amount: float, threshold: int = 600) -> bool:\n'
+            '    """Check credit eligibility.\n'
+            '\n'
+            '    :param client_id: Unique client identifier\n'
+            '    :param amount: Requested credit amount\n'
+            '    :param threshold: Minimum score required\n'
+            '    :return: True if eligible\n'
+            '    """\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/documented.py:check", tmp_path)
+        # Param descriptions should appear in the table
+        assert "Unique client identifier" in result
+        assert "Requested credit amount" in result
+        assert "Minimum score required" in result
+        # Return description should appear
+        assert "True if eligible" in result
+        # :param lines should NOT appear in the docstring area
+        assert ":param" not in result
+        assert ":return" not in result
+        # Clean docstring should still be present
+        assert "Check credit eligibility." in result
+
+    def test_displays_field_comments(self, tmp_path: Path) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "commented.py").write_text(
+            'from pydantic import BaseModel\n\n'
+            'class Request(BaseModel):\n'
+            '    client_id: str  # Identifiant du client\n'
+            '    amount: float  # Montant demandé\n'
+            '    note: str = ""\n\n'
+            'def evaluate(req: Request) -> bool:\n'
+            '    return True\n',
+            encoding="utf-8",
+        )
+        result = _resolve_contract("src/commented.py:evaluate", tmp_path)
+        assert "speks-contract-field-comment" in result
+        assert "Identifiant du client" in result
+        assert "Montant demandé" in result
+
 
 class TestPlaygroundPlugin:
     def test_injects_js(self) -> None:

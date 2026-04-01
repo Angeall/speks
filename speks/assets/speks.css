@@ -89,6 +89,12 @@
   font-size: .62rem;
   margin-left: .4rem;
 }
+.speks-contract-field-comment {
+  font-weight: 400;
+  color: #888;
+  font-size: .85em;
+  margin-left: .4rem;
+}
 .speks-contract-nested-table {
   margin: .3rem 0;
   font-size: .68rem;
