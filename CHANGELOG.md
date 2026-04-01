@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.2] — 2026-04-02
+
+### Fixed
+
+- Fixed display of nested pydantic models in contracts
+
 ## [0.1.1] — 2026-04-01
 
 ### Added

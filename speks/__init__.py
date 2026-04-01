@@ -8,5 +8,5 @@ from speks.engine.mocking import (
 )
 
 __all__ = ["ExternalService", "MockErrorResponse", "MockResponse", "ServiceError"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __author__ = "Angeall Software"

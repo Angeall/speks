@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyspeks"
-version = "0.1.1"
+version = "0.1.2"
 description = "Interactive Functional Analysis Generator"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Speks Team"},
+    {name = "Angeall Software"},
 ]
 dependencies = [
     "pydantic>=2.0",
