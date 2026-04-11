@@ -40,7 +40,7 @@ mkdocs_metadata = (
     copy_metadata("mkdocs")
     + copy_metadata("mkdocs-material")
     + copy_metadata("pymdown-extensions")
-    + copy_metadata("speks")
+    + copy_metadata("pyspeks")
 )
 
 # Speks own assets
