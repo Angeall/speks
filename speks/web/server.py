@@ -374,38 +374,100 @@ def _get_page_content(
 def _load_user_modules(src_dir: Path) -> dict[str, types.ModuleType]:
     """Import every ``.py`` file under *src_dir* and return a name→module map.
 
-    The *src_dir* is registered as a real package (``_sw_user_``) so that
-    relative imports between user modules (e.g. ``from .regles import …``)
-    resolve correctly.
+    The *src_dir* is registered as a real package (``_sw_user_``) and every
+    subdirectory containing Python files is registered as a subpackage so
+    relative imports like ``from .models import ClientProfile`` or
+    ``from .address import Address`` (inside ``models/client.py``) resolve
+    correctly.
     """
-    package_name = "_sw_user_"
-
-    # Create a proper package so relative imports work.
-    pkg = types.ModuleType(package_name)
-    pkg.__path__ = [str(src_dir)]
-    pkg.__package__ = package_name
-    sys.modules[package_name] = pkg
-
+    root_pkg = "_sw_user_"
+    src_dir = src_dir.resolve()
     modules: dict[str, types.ModuleType] = {}
 
+    def _pkg_name(rel_parts: tuple[str, ...]) -> str:
+        return root_pkg if not rel_parts else root_pkg + "." + ".".join(rel_parts)
+
+    def _ensure_package(pkg_dir: Path, rel_parts: tuple[str, ...]) -> None:
+        name = _pkg_name(rel_parts)
+        if name in sys.modules:
+            return
+        if rel_parts:
+            _ensure_package(pkg_dir.parent, rel_parts[:-1])
+        init_file = pkg_dir / "__init__.py"
+        spec = None
+        if init_file.is_file():
+            spec = importlib.util.spec_from_file_location(
+                name, init_file,
+                submodule_search_locations=[str(pkg_dir)],
+            )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+        else:
+            mod = types.ModuleType(name)
+            mod.__path__ = [str(pkg_dir)]
+        mod.__package__ = name
+        sys.modules[name] = mod
+        if rel_parts:
+            parent = sys.modules[_pkg_name(rel_parts[:-1])]
+            setattr(parent, rel_parts[-1], mod)
+        if spec and spec.loader:
+            try:
+                spec.loader.exec_module(mod)
+            except Exception as exc:
+                print(
+                    f"[speks] failed to load package {name}: {exc}",
+                    file=sys.stderr,
+                )
+
+    # Register the root package first.
+    _ensure_package(src_dir, ())
+
+    # Pre-register every subdirectory that contains Python files as a package,
+    # so that when we later load individual modules, all parent packages and
+    # their ``__init__`` re-exports are already in ``sys.modules``.
+    sub_dirs: set[Path] = set()
+    for py_file in src_dir.rglob("*.py"):
+        parent = py_file.parent
+        while parent != src_dir and parent not in sub_dirs:
+            sub_dirs.add(parent)
+            parent = parent.parent
+    for pkg_dir in sorted(sub_dirs, key=lambda p: len(p.parts)):
+        rel_parts = pkg_dir.relative_to(src_dir).parts
+        _ensure_package(pkg_dir, rel_parts)
+
+    # Load every non-init module under its proper dotted name.
     for py_file in sorted(src_dir.rglob("*.py")):
         if py_file.name == "__init__.py":
             continue
-        module_name = f"{package_name}.{py_file.stem}"
-        spec = importlib.util.spec_from_file_location(
-            module_name,
-            py_file,
-            submodule_search_locations=[],
-        )
-        if spec and spec.loader:
-            mod = importlib.util.module_from_spec(spec)
-            mod.__package__ = package_name
-            sys.modules[module_name] = mod
-            try:
-                spec.loader.exec_module(mod)
-            except Exception:
-                continue
-            modules[py_file.stem] = mod
+        rel = py_file.relative_to(src_dir)
+        pkg_rel_parts = rel.parent.parts if rel.parent != Path(".") else ()
+        mod_stem = py_file.stem
+        pkg_name = _pkg_name(pkg_rel_parts)
+        module_name = f"{pkg_name}.{mod_stem}"
+        rel_dotted = ".".join((*pkg_rel_parts, mod_stem))
+        # Skip if already loaded (via a package ``__init__`` import chain).
+        if module_name in sys.modules:
+            modules[rel_dotted] = sys.modules[module_name]
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, py_file)
+        if not spec or not spec.loader:
+            continue
+        mod = importlib.util.module_from_spec(spec)
+        mod.__package__ = pkg_name
+        sys.modules[module_name] = mod
+        parent_mod = sys.modules.get(pkg_name)
+        if parent_mod is not None:
+            setattr(parent_mod, mod_stem, mod)
+        try:
+            spec.loader.exec_module(mod)
+        except Exception as exc:
+            print(
+                f"[speks] failed to load module {module_name} "
+                f"({py_file}): {exc}",
+                file=sys.stderr,
+            )
+            continue
+        modules[rel_dotted] = mod
     return modules
 
 
