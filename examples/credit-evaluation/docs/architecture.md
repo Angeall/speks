@@ -30,12 +30,8 @@ The diagram below shows the call chain triggered by `full_evaluation` — the fu
 
 ### Credit
 
-@[code](src/credit.py:CheckClientBalance)
-
-@[code](src/credit.py:CheckCreditHistory)
+@[code](src/credit.py:CoreBanking)
 
 ### Compliance
 
-@[code](src/compliance.py:CheckBlacklist)
-
-@[code](src/compliance.py:CheckPEP)
+@[code](src/compliance.py:ComplianceService)

@@ -34,10 +34,6 @@ Delivery time depends on warehouse processing, transit (zone + service level), a
 
 ## External Services
 
-### Warehouse Stock Check
+### Logistics API
 
-@[code](src/delivery.py:CheckWarehouseStock)
-
-### Customs Clearance
-
-@[code](src/delivery.py:CheckCustomsClearance)
+@[code](src/delivery.py:LogisticsAPI)

@@ -20,16 +20,16 @@
 
 ### Product Catalog
 
-@[code](src/pricing.py:FetchProductCatalog)
+@[code](src/pricing.py:ProductCatalog)
 
 ### Customer Service
 
-@[code](src/pricing.py:FetchCustomerTier)
+@[code](src/pricing.py:CustomerService)
 
 ### Warehouse
 
-@[code](src/orders.py:CheckInventory)
+@[code](src/orders.py:Warehouse)
 
 ### Payment Gateway
 
-@[code](src/orders.py:ProcessPayment)
+@[code](src/orders.py:PaymentGateway)

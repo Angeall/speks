@@ -24,16 +24,16 @@
 
 ### EHR (Electronic Health Records)
 
-@[code](src/eligibility.py:FetchPatientRecord)
+@[code](src/eligibility.py:EHR)
 
 ### Insurance Payer
 
-@[code](src/eligibility.py:VerifyInsuranceCoverage)
+@[code](src/eligibility.py:InsurancePayer)
 
 ### Pharmacy / Formulary
 
-@[code](src/eligibility.py:CheckFormulary)
+@[code](src/eligibility.py:Pharmacy)
 
 ### Clinical Guidelines
 
-@[code](src/prior_auth.py:CheckClinicalGuidelines)
+@[code](src/prior_auth.py:ClinicalDB)

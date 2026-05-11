@@ -18,7 +18,7 @@ The basic rule checks whether the client's balance exceeds the requested amount.
 
 ### External Service
 
-@[code](src/credit.py:CheckClientBalance)
+@[code](src/credit.py:CoreBanking)
 
 ### Execution Flow
 

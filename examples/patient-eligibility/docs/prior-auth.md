@@ -26,8 +26,8 @@ Some procedures require prior authorization from the insurance payer before they
 
 ### Insurance Payer — Prior Auth Submission
 
-@[code](src/prior_auth.py:SubmitPriorAuth)
+@[code](src/prior_auth.py:PriorAuthSystem)
 
 ### Clinical Guidelines Database
 
-@[code](src/prior_auth.py:CheckClinicalGuidelines)
+@[code](src/prior_auth.py:ClinicalDB)

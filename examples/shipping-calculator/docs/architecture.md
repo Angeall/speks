@@ -22,18 +22,10 @@
 
 ## External Services
 
-### Geo Service
+### Shipping API
 
-@[code](src/rates.py:FetchZoneMapping)
+@[code](src/rates.py:ShippingAPI)
 
-### Carrier API
+### Logistics API
 
-@[code](src/rates.py:FetchCarrierRates)
-
-### Warehouse
-
-@[code](src/delivery.py:CheckWarehouseStock)
-
-### Customs API
-
-@[code](src/delivery.py:CheckCustomsClearance)
+@[code](src/delivery.py:LogisticsAPI)
