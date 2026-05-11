@@ -27,6 +27,23 @@ def _open_playground(page: Page, base: str, page_path: str, func: str) -> None:
     )
 
 
+def _wait_for_result(page: Page, func: str, timeout: int = 15_000) -> str:
+    """Wait until ``swRunFunction`` finishes and return the result text.
+
+    The playground JS sets ``textContent = 'Running…'`` before awaiting
+    ``/api/run`` and only adds ``.success``/``.error`` once the response
+    has been parsed.  Polling on the class transition is the only reliable
+    way to capture the final text on slower runners (e.g. CI).
+    """
+    sel = f"#speks-result-{func}"
+    # Use Playwright's selector engine to wait for the final state class;
+    # a CSS-with-attribute selector keeps the JS injection out of the loop.
+    page.locator(
+        f"{sel}.success, {sel}.error",
+    ).wait_for(state="attached", timeout=timeout)
+    return page.locator(sel).text_content() or ""
+
+
 # ---------------------------------------------------------------------------
 # Button enable/disable behaviour
 # ---------------------------------------------------------------------------
@@ -89,11 +106,11 @@ class TestRunDefaultMock:
         form.locator("input[name='client_id']").fill("c1")
         form.locator("input[name='amount']").fill("1000")
         form.locator(".speks-run-btn").click()
-        result = page.locator("#speks-result-evaluate_credit")
-        expect(result).to_be_visible(timeout=5_000)
+        text = _wait_for_result(page, "evaluate_credit")
         # Default mock balance is 1500 > amount 1000 → result is true.
-        expect(result).to_have_class(re.compile(r"\bsuccess\b"), timeout=5_000)
-        assert "true" in (result.text_content() or "").lower()
+        result = page.locator("#speks-result-evaluate_credit")
+        expect(result).to_have_class(re.compile(r"\bsuccess\b"))
+        assert "true" in text.lower()
 
     def test_call_log_shows_dotted_service_name(
         self, speks_server: str, page: Page,
@@ -105,9 +122,7 @@ class TestRunDefaultMock:
         form.locator("input[name='client_id']").fill("c1")
         form.locator("input[name='amount']").fill("100")
         form.locator(".speks-run-btn").click()
-        result = page.locator("#speks-result-evaluate_credit")
-        expect(result).to_be_visible(timeout=5_000)
-        text = result.text_content() or ""
+        text = _wait_for_result(page, "evaluate_credit")
         assert "CoreBanking.check_balance" in text
 
 
@@ -135,9 +150,7 @@ class TestMockOverrides:
         )
         balance_input.fill("100")
         form.locator(".speks-run-btn").click()
-        result = page.locator("#speks-result-evaluate_credit")
-        expect(result).to_be_visible(timeout=5_000)
-        text = (result.text_content() or "").lower()
+        text = _wait_for_result(page, "evaluate_credit").lower()
         # The function returns False when balance <= amount.
         assert "false" in text or '"result": false' in text
 
@@ -164,9 +177,7 @@ class TestErrorSimulation:
         )
         err_box.check()
         form.locator(".speks-run-btn").click()
-        result = page.locator("#speks-result-evaluate_credit")
-        expect(result).to_be_visible(timeout=5_000)
-        text = result.text_content() or ""
+        text = _wait_for_result(page, "evaluate_credit")
         # The business rule catches ServiceError and returns False.
         # The call log must record the error.
         assert "CLIENT_NOT_FOUND" in text or "error_code" in text
