@@ -191,10 +191,20 @@ def _maybe_coerce_to_pydantic(default_mock: Any, override: Any) -> Any:
     we rebuild an instance of the same class so that business code can
     keep accessing fields via attribute syntax.
 
-    When a field expects a complex type (``list``, ``dict``) but the
-    playground sent a string (from a text ``<input>``), we attempt to
-    JSON-parse string values before validation so that ``"[1, 2]"``
-    becomes ``[1, 2]``.
+    Coercion strategy (each step tried in order, first success wins):
+
+    1. Validate the override dict as-is.
+    2. JSON-parse / ``ast.literal_eval`` string values that look like
+       complex literals (``"[1,2]"``, ``"{...}"``), then re-validate.
+    3. Per-field merge: start from the default mock, and for each
+       override field try ``model_validate`` with that single change;
+       keep the override if it validates, fall back to the default
+       value otherwise.  Guarantees a valid model instance is returned
+       even when the user typed garbage in one field.
+    4. Last resort: return the default mock unchanged.
+
+    The function NEVER returns a raw dict — that would crash business
+    code that accesses fields via attribute syntax.
     """
     if not isinstance(override, dict):
         return override
@@ -204,16 +214,13 @@ def _maybe_coerce_to_pydantic(default_mock: Any, override: Any) -> Any:
     if not (hasattr(model_cls, "model_validate") and hasattr(model_cls, "model_fields")):
         return override
 
-    # First attempt: validate as-is.
+    # 1. Validate as-is.
     try:
         return model_cls.model_validate(override)
     except Exception:
         pass
 
-    # Second attempt: JSON-parse (or ast.literal_eval) string values
-    # that should be complex types.  The playground renders every field
-    # as a text <input>, so ``list[str]`` arrives as ``'["a", "b"]'``
-    # (JSON) or ``"['a', 'b']"`` (Python repr).
+    # 2. JSON / Python-literal parse for stringified complex values.
     import ast as _ast
     import json as _json
 
@@ -224,7 +231,6 @@ def _maybe_coerce_to_pydantic(default_mock: Any, override: Any) -> Any:
         stripped = value.strip()
         if not stripped or stripped[:1] not in ("[", "{", "("):
             continue
-        # Try JSON first (canonical), then Python literal (repr fallback).
         for parser in (_json.loads, _ast.literal_eval):
             try:
                 patched[key] = parser(stripped)
@@ -234,7 +240,30 @@ def _maybe_coerce_to_pydantic(default_mock: Any, override: Any) -> Any:
     try:
         return model_cls.model_validate(patched)
     except Exception:
-        return override
+        pass
+
+    # 3. Per-field merge with default fallback.  Starts from the
+    #    serialised default mock, then tries to swap in each override
+    #    one at a time.  Invalid fields stay at their default.
+    try:
+        merged = default_mock.model_dump()
+        fields = set(getattr(model_cls, "model_fields", {}).keys())
+        for key, value in patched.items():
+            if key not in fields:
+                continue
+            candidate = {**merged, key: value}
+            try:
+                validated = model_cls.model_validate(candidate)
+            except Exception:
+                continue
+            # Use the validated value (Pydantic may have coerced it).
+            merged[key] = validated.model_dump()[key]
+        return model_cls.model_validate(merged)
+    except Exception:
+        pass
+
+    # 4. Last resort: hand the business code the untouched default.
+    return default_mock
 
 
 # ---------------------------------------------------------------------------

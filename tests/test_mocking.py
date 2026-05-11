@@ -296,6 +296,54 @@ class TestPydanticCoercion:
         set_mock_overrides({"InfoAPI.fetch": "raw_string"})
         assert InfoAPI().fetch() == "raw_string"
 
+    def test_invalid_list_field_falls_back_to_default(self) -> None:
+        """A naive string in a ``list[str]`` field keeps the default."""
+        pydantic = pytest.importorskip("pydantic")
+
+        class Record(pydantic.BaseModel):
+            name: str
+            tags: list[str]
+
+        @service
+        class RecordAPI:
+            @stub(mock=Record(name="x", tags=["a", "b"]))
+            def fetch(self) -> Record:
+                ...
+
+        # User types a bare word in `tags` instead of a JSON list.
+        set_mock_overrides({
+            "RecordAPI.fetch": {"name": "y", "tags": "single-string"},
+        })
+        result = RecordAPI().fetch()
+        assert isinstance(result, Record)
+        # Valid override applied:
+        assert result.name == "y"
+        # Invalid field falls back to default:
+        assert result.tags == ["a", "b"]
+
+    def test_partial_override_with_invalid_field_does_not_crash(self) -> None:
+        """All-invalid override returns the unchanged default mock."""
+        pydantic = pytest.importorskip("pydantic")
+
+        class Account(pydantic.BaseModel):
+            balance: float
+            owners: list[str]
+
+        @service
+        class BankAPI:
+            @stub(mock=Account(balance=100.0, owners=["alice"]))
+            def fetch(self) -> Account:
+                ...
+
+        # Every field invalid.
+        set_mock_overrides({
+            "BankAPI.fetch": {"balance": "not-a-number", "owners": "alice"},
+        })
+        result = BankAPI().fetch()
+        assert isinstance(result, Account)
+        assert result.balance == 100.0
+        assert result.owners == ["alice"]
+
 
 # ---------------------------------------------------------------------------
 # Service / stub introspection metadata

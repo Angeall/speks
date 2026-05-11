@@ -41,7 +41,20 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_EXAMPLE_SRC = _PROJECT_ROOT / "examples" / "credit-evaluation"
+_EXAMPLES_DIR = _PROJECT_ROOT / "examples"
+_EXAMPLE_SRC = _EXAMPLES_DIR / "credit-evaluation"
+
+
+def _copy_example(src: Path, dest: Path) -> Path:
+    """Copy the standard Speks example sub-trees from *src* to *dest*."""
+    for sub in ("src", "docs", "diagrams"):
+        src_sub = src / sub
+        if src_sub.is_dir():
+            shutil.copytree(src_sub, dest / sub)
+    speks_toml = src / "speks.toml"
+    if speks_toml.is_file():
+        shutil.copy2(speks_toml, dest / "speks.toml")
+    return dest
 
 
 @pytest.fixture(scope="session")
@@ -51,13 +64,16 @@ def credit_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
     Working from a copy keeps the in-repo example clean — tests may
     create files under ``testcases/`` or rebuild ``site/``.
     """
-    workspace = tmp_path_factory.mktemp("speks_e2e_credit")
-    for sub in ("src", "docs", "diagrams"):
-        shutil.copytree(_EXAMPLE_SRC / sub, workspace / sub)
-    speks_toml = _EXAMPLE_SRC / "speks.toml"
-    if speks_toml.is_file():
-        shutil.copy2(speks_toml, workspace / "speks.toml")
-    return workspace
+    return _copy_example(_EXAMPLE_SRC, tmp_path_factory.mktemp("speks_e2e_credit"))
+
+
+@pytest.fixture(scope="session")
+def patient_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Copy the patient-eligibility example to a temp dir."""
+    return _copy_example(
+        _EXAMPLES_DIR / "patient-eligibility",
+        tmp_path_factory.mktemp("speks_e2e_patient"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -85,18 +101,13 @@ def _wait_for_http(url: str, timeout: float = 30.0) -> None:
     raise RuntimeError(f"Server at {url} did not become ready within {timeout}s: {last_err}")
 
 
-@pytest.fixture(scope="session")
-def speks_server(credit_workspace: Path) -> Iterator[str]:
-    """Start a Speks dev server on a free port and return its base URL.
-
-    Uses the in-process FastAPI app via ``uvicorn`` in a daemon thread —
-    no subprocess overhead, but isolates network state from the test.
-    """
+def _start_server(workspace: Path) -> Iterator[str]:
+    """Build the site and start an in-process uvicorn server in a thread."""
     from speks.web.builder import build_site
     from speks.web.server import create_app
 
-    site_dir = build_site(credit_workspace)
-    app = create_app(credit_workspace, site_dir)
+    site_dir = build_site(workspace)
+    app = create_app(workspace, site_dir)
 
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -114,6 +125,18 @@ def speks_server(credit_workspace: Path) -> Iterator[str]:
     finally:
         server.should_exit = True
         thread.join(timeout=5.0)
+
+
+@pytest.fixture(scope="session")
+def speks_server(credit_workspace: Path) -> Iterator[str]:
+    """Start a Speks dev server for the credit-evaluation example."""
+    yield from _start_server(credit_workspace)
+
+
+@pytest.fixture(scope="session")
+def patient_server(patient_workspace: Path) -> Iterator[str]:
+    """Start a Speks dev server for the patient-eligibility example."""
+    yield from _start_server(patient_workspace)
 
 
 # ---------------------------------------------------------------------------
