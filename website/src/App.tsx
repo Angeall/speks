@@ -91,22 +91,22 @@ function CodePreview() {
 function pythonCode() {
   return (
     <>
-      <span className="kw">from</span> speks <span className="kw">import</span> ExternalService, MockResponse{'\n'}
+      <span className="kw">from</span> speks <span className="kw">import</span> service, stub{'\n'}
       {'\n'}
       {'\n'}
-      <span className="kw">class</span> <span className="cls">CheckBalance</span>(ExternalService):{'\n'}
-      {'    '}<span className="str">"""Core Banking API call."""</span>{'\n'}
+      <span className="dec">@service</span>{'\n'}
+      <span className="kw">class</span> <span className="cls">CoreBanking</span>:{'\n'}
+      {'    '}<span className="str">"""Core Banking API (blackbox)."""</span>{'\n'}
       {'\n'}
-      {'    '}<span className="kw">def</span> <span className="fn">execute</span>(self, client_id: str) -&gt; float:{'\n'}
-      {'        '}<span className="kw">pass</span>  <span className="cm"># real HTTP in prod</span>{'\n'}
-      {'\n'}
-      {'    '}<span className="kw">def</span> <span className="fn">mock</span>(self, client_id: str) -&gt; MockResponse:{'\n'}
-      {'        '}<span className="kw">return</span> MockResponse(data=<span className="num">1500.0</span>){'\n'}
+      {'    '}<span className="dec">@stub</span>(mock=<span className="num">1500.0</span>){'\n'}
+      {'    '}<span className="kw">def</span> <span className="fn">check_balance</span>(self, client_id: str) -&gt; float:{'\n'}
+      {'        '}<span className="str">"""Fetch the client's current balance."""</span>{'\n'}
+      {'        '}...{'\n'}
       {'\n'}
       {'\n'}
       <span className="kw">def</span> <span className="fn">evaluate_credit</span>(client_id: str, amount: float) -&gt; bool:{'\n'}
       {'    '}<span className="str">"""Client balance must exceed amount."""</span>{'\n'}
-      {'    '}balance = CheckBalance().call(client_id){'\n'}
+      {'    '}balance = CoreBanking().check_balance(client_id){'\n'}
       {'    '}<span className="kw">return</span> balance &gt; amount{'\n'}
     </>
   )

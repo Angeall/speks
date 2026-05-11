@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockResponse
+from speks import service, stub
 
 
 class ZoneInfo(BaseModel):
@@ -23,54 +23,43 @@ class CarrierRate(BaseModel):
     carrier: str  # Carrier name
 
 
-class FetchZoneMapping(ExternalService):
-    """Look up shipping zone from origin/destination postal codes (Blackbox)."""
+@service
+class ShippingAPI:
+    """Carrier shipping API (blackbox)."""
 
-    component_name = "GeoService"
+    @stub(mock=ZoneInfo(
+        zone=4,
+        distance_km=850,
+        cross_border=False,
+        origin_country="US",
+        dest_country="US",
+    ))
+    def fetch_zone(self, origin_zip: str, dest_zip: str) -> ZoneInfo:
+        """Look up shipping zone from origin/destination postal codes."""
+        ...
 
-    def execute(self, origin_zip: str, dest_zip: str) -> ZoneInfo:
-        pass  # type: ignore[return-value]
-
-    def mock(self, origin_zip: str, dest_zip: str) -> MockResponse:
-        return MockResponse(data=ZoneInfo(
-            zone=4,
-            distance_km=850,
-            cross_border=False,
-            origin_country="US",
-            dest_country="US",
-        ))
-
-
-class FetchCarrierRates(ExternalService):
-    """Get real-time rates from carrier API (Blackbox)."""
-
-    component_name = "CarrierAPI"
-
-    def execute(self, zone: int, weight_kg: float, service_level: str) -> CarrierRate:
-        pass  # type: ignore[return-value]
-
-    def mock(self, zone: int, weight_kg: float, service_level: str) -> MockResponse:
-        base_rates = {"standard": 5.99, "express": 12.99, "overnight": 24.99}
-        base = base_rates.get(service_level, 9.99)
-        return MockResponse(data=CarrierRate(
-            base_rate=base,
-            fuel_surcharge=round(base * 0.08, 2),
-            carrier="FastShip",
-        ))
+    @stub(mock=CarrierRate(
+        base_rate=5.99,
+        fuel_surcharge=0.48,
+        carrier="FastShip",
+    ))
+    def fetch_rate(self, zone: int, weight_kg: float, service_level: str) -> CarrierRate:
+        """Get a real-time rate quote from the carrier."""
+        ...
 
 
 class ShippingRate(BaseModel):
     """Complete shipping rate breakdown."""
 
-    carrier: str  # Carrier name
-    service_level: str  # Service level (standard, express, overnight)
-    zone: int  # Shipping zone
-    base_rate: float  # Base rate from carrier
-    fuel_surcharge: float  # Fuel surcharge
-    weight_surcharge: float  # Extra charge for heavy packages
-    zone_surcharge: float  # Extra charge for distant zones
-    cross_border_fee: float  # Fee for international shipments
-    total: float  # Total shipping cost
+    carrier: str
+    service_level: str
+    zone: int
+    base_rate: float
+    fuel_surcharge: float
+    weight_surcharge: float
+    zone_surcharge: float
+    cross_border_fee: float
+    total: float
 
 
 def calculate_shipping_rate(
@@ -90,19 +79,15 @@ def calculate_shipping_rate(
     :param service_level: Delivery speed tier
     :return: Full rate breakdown with all surcharges
     """
-    zone_info = FetchZoneMapping().call(origin_zip, dest_zip)
-    carrier = FetchCarrierRates().call(zone_info.zone, weight_kg, service_level)
+    api = ShippingAPI()
+    zone_info = api.fetch_zone(origin_zip, dest_zip)
+    carrier = api.fetch_rate(zone_info.zone, weight_kg, service_level)
 
     base = carrier.base_rate
     fuel = carrier.fuel_surcharge
 
-    # Weight surcharge: $1.50 per kg over 5kg
     weight_surcharge = max(0, (weight_kg - 5)) * 1.50
-
-    # Zone surcharge: $2 per zone beyond zone 3
     zone_surcharge = max(0, (zone_info.zone - 3)) * 2.00
-
-    # Cross-border fee
     cross_border_fee = 15.00 if zone_info.cross_border else 0.00
 
     total = round(base + fuel + weight_surcharge + zone_surcharge + cross_border_fee, 2)

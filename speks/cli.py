@@ -105,7 +105,7 @@ markdown_extensions:
 _SAMPLE_RULE = """\
 from pydantic import BaseModel
 
-from speks import ExternalService, MockResponse
+from speks import MockError, ServiceError, service, stub
 
 
 class ClientBalance(BaseModel):
@@ -116,19 +116,21 @@ class ClientBalance(BaseModel):
     account_status: str = "active"
 
 
-class CheckClientBalance(ExternalService):
-    \"\"\"Call to the Core Banking API (Blackbox).\"\"\"
+@service
+class CoreBanking:
+    \"\"\"Core Banking API (blackbox).\"\"\"
 
-    def execute(self, client_id: str) -> ClientBalance:
-        # In production, performs a real HTTP call
-        pass  # type: ignore[return-value]
-
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=ClientBalance(
-            balance=1500.0,
-            currency="USD",
-            account_status="active",
-        ))
+    @stub(
+        mock=ClientBalance(balance=1500.0, currency="USD", account_status="active"),
+        error=MockError(
+            "CLIENT_NOT_FOUND",
+            "The specified client was not found.",
+            http_code=404,
+        ),
+    )
+    def check_balance(self, client_id: str) -> ClientBalance:
+        \"\"\"Fetch the client's current balance.\"\"\"
+        ...  # real HTTP/SQL implementation here
 
 
 class CreditDecision(BaseModel):
@@ -141,7 +143,14 @@ class CreditDecision(BaseModel):
 
 def evaluate_credit(client_id: str, amount: float) -> CreditDecision:
     \"\"\"Evaluate whether the client can obtain a credit for the requested amount.\"\"\"
-    result = CheckClientBalance().call(client_id)
+    try:
+        result = CoreBanking().check_balance(client_id)
+    except ServiceError as exc:
+        return CreditDecision(
+            approved=False,
+            balance=0.0,
+            reason=exc.error_message,
+        )
     approved = result.balance > amount
     return CreditDecision(
         approved=approved,
@@ -167,7 +176,7 @@ The following rule determines whether a client can obtain a credit.
 
 ### External Service
 
-@[code](src/rules.py:CheckClientBalance)
+@[code](src/rules.py:CoreBanking)
 
 ### Sequence Diagram
 

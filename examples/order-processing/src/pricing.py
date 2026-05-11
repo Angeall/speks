@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockResponse
+from speks import service, stub
 
 
 class ProductInfo(BaseModel):
@@ -22,37 +22,33 @@ class CustomerTier(BaseModel):
     member_since: str
 
 
-class FetchProductCatalog(ExternalService):
-    """Retrieve product details from the catalog service (Blackbox)."""
+@service
+class ProductCatalog:
+    """Product catalog API (blackbox)."""
 
-    component_name = "ProductCatalog"
-
-    def execute(self, product_id: str) -> ProductInfo:
-        pass  # type: ignore[return-value]
-
-    def mock(self, product_id: str) -> MockResponse:
-        return MockResponse(data=ProductInfo(
-            id=product_id,
-            name="Wireless Headphones",
-            base_price=79.99,
-            category="electronics",
-        ))
+    @stub(mock=ProductInfo(
+        id="p1",
+        name="Wireless Headphones",
+        base_price=79.99,
+        category="electronics",
+    ))
+    def fetch_product(self, product_id: str) -> ProductInfo:
+        """Retrieve product details from the catalog."""
+        ...
 
 
-class FetchCustomerTier(ExternalService):
-    """Retrieve customer loyalty tier (Blackbox)."""
+@service
+class CustomerService:
+    """Customer service API (blackbox)."""
 
-    component_name = "CustomerService"
-
-    def execute(self, customer_id: str) -> CustomerTier:
-        pass  # type: ignore[return-value]
-
-    def mock(self, customer_id: str) -> MockResponse:
-        return MockResponse(data=CustomerTier(
-            tier="gold",
-            discount_pct=10,
-            member_since="2022-03-15",
-        ))
+    @stub(mock=CustomerTier(
+        tier="gold",
+        discount_pct=10,
+        member_since="2022-03-15",
+    ))
+    def fetch_tier(self, customer_id: str) -> CustomerTier:
+        """Retrieve the customer's loyalty tier."""
+        ...
 
 
 class LinePriceResult(BaseModel):
@@ -70,10 +66,9 @@ def calculate_line_price(product_id: str, quantity: int) -> LinePriceResult:
 
     Fetches the product from the catalog and applies quantity-based pricing.
     """
-    product = FetchProductCatalog().call(product_id)
+    product = ProductCatalog().fetch_product(product_id)
     unit_price = product.base_price
 
-    # Volume discount tiers
     if quantity >= 100:
         discount = 0.15
     elif quantity >= 50:
@@ -113,7 +108,7 @@ def calculate_order_total(
 
     Applies volume discounts per line, then the customer's loyalty discount on top.
     """
-    customer = FetchCustomerTier().call(customer_id)
+    customer = CustomerService().fetch_tier(customer_id)
     loyalty_discount = customer.discount_pct / 100
 
     subtotal = 0.0

@@ -38,6 +38,10 @@ dev = [
 build = [
     "pyinstaller>=6.0",
 ]
+e2e = [
+    "playwright>=1.40",
+    "pytest-playwright>=0.4",
+]
 
 [project.scripts]
 speks = "speks.cli:app"
@@ -77,3 +81,8 @@ skip_empty = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests requiring a running server and Playwright browser",
+]
+# Exclude e2e by default; opt-in via `pytest -m e2e` or `pytest tests/e2e`.
+addopts = "-m 'not e2e'"

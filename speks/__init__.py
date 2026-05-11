@@ -1,12 +1,12 @@
 """Speks — Interactive Functional Analysis Generator."""
 
 from speks.engine.mocking import (
-    ExternalService,
-    MockErrorResponse,
-    MockResponse,
+    MockError,
     ServiceError,
+    service,
+    stub,
 )
 
-__all__ = ["ExternalService", "MockErrorResponse", "MockResponse", "ServiceError"]
+__all__ = ["MockError", "ServiceError", "service", "stub"]
 __version__ = "0.1.3"
 __author__ = "Angeall Software"

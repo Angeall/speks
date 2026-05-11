@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from speks import ServiceError
 
-from .credit import CheckClientBalance, CheckCreditHistory, CreditHistory
+from .credit import CoreBanking, CreditHistory
 
 
 class CreditRequest(BaseModel):
@@ -39,8 +39,9 @@ def evaluate_credit_typed(request: CreditRequest) -> FullCreditDecision:
     :param request: Structured credit evaluation request
     :return: Full decision with approval status and details
     """
+    bank = CoreBanking()
     try:
-        result = CheckClientBalance().call(request.client_id)
+        result = bank.check_balance(request.client_id)
     except ServiceError:
         return FullCreditDecision(
             approved=False,
@@ -58,7 +59,7 @@ def evaluate_credit_typed(request: CreditRequest) -> FullCreditDecision:
     if not request.include_history:
         return FullCreditDecision(approved=True, balance=result.balance)
 
-    history = CheckCreditHistory().call(request.client_id)
+    history = bank.check_credit_history(request.client_id)
 
     score_ok = history.score >= request.score_threshold
     incidents_ok = history.incidents == 0

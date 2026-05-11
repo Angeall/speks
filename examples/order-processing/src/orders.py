@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockErrorResponse, MockResponse, ServiceError
+from speks import MockError, ServiceError, service, stub
 
 from .pricing import OrderTotal, calculate_order_total
 
@@ -23,50 +23,38 @@ class PaymentResult(BaseModel):
     amount: float
 
 
-class CheckInventory(ExternalService):
-    """Check product availability in the warehouse (Blackbox)."""
+@service
+class Warehouse:
+    """Warehouse inventory API (blackbox)."""
 
-    component_name = "Warehouse"
-
-    def execute(self, product_id: str) -> StockInfo:
-        pass  # type: ignore[return-value]
-
-    def mock(self, product_id: str) -> MockResponse:
-        return MockResponse(data=StockInfo(
-            available=True,
-            stock=250,
-            warehouse="EU-WEST-1",
-        ))
-
-    def mock_error(self, product_id: str) -> MockErrorResponse:
-        return MockErrorResponse(
-            error_code="WAREHOUSE_TIMEOUT",
-            error_message="Warehouse service did not respond in time.",
+    @stub(
+        mock=StockInfo(available=True, stock=250, warehouse="EU-WEST-1"),
+        error=MockError(
+            "WAREHOUSE_TIMEOUT",
+            "Warehouse service did not respond in time.",
             http_code=504,
-        )
+        ),
+    )
+    def check_inventory(self, product_id: str) -> StockInfo:
+        """Check product availability."""
+        ...
 
 
-class ProcessPayment(ExternalService):
-    """Submit payment to the payment gateway (Blackbox)."""
+@service
+class PaymentGateway:
+    """Payment gateway API (blackbox)."""
 
-    component_name = "PaymentGateway"
-
-    def execute(self, payment_data: dict) -> PaymentResult:
-        pass  # type: ignore[return-value]
-
-    def mock(self, payment_data: dict) -> MockResponse:
-        return MockResponse(data=PaymentResult(
-            status="captured",
-            transaction_id="txn_abc123",
-            amount=payment_data.get("amount", 0),
-        ))
-
-    def mock_error(self, payment_data: dict) -> MockErrorResponse:
-        return MockErrorResponse(
-            error_code="PAYMENT_DECLINED",
-            error_message="Card was declined by the issuing bank.",
+    @stub(
+        mock=PaymentResult(status="captured", transaction_id="txn_abc123", amount=0.0),
+        error=MockError(
+            "PAYMENT_DECLINED",
+            "Card was declined by the issuing bank.",
             http_code=402,
-        )
+        ),
+    )
+    def charge(self, payment_data: dict) -> PaymentResult:
+        """Submit a payment."""
+        ...
 
 
 class ValidationResult(BaseModel):
@@ -84,10 +72,11 @@ def validate_order(customer_id: str, items: list) -> ValidationResult:
     Checks inventory for each item and calculates the final price.
     Returns a validation result with availability and pricing details.
     """
+    warehouse = Warehouse()
     unavailable = []
     for item in items:
         try:
-            stock = CheckInventory().call(item["product_id"])
+            stock = warehouse.check_inventory(item["product_id"])
             if not stock.available or stock.stock < item["quantity"]:
                 unavailable.append({
                     "product_id": item["product_id"],
@@ -142,7 +131,7 @@ def process_order(customer_id: str, items: list, payment_method: str) -> OrderRe
     total = validation.pricing.total
 
     try:
-        payment = ProcessPayment().call({
+        payment = PaymentGateway().charge({
             "amount": total,
             "method": payment_method,
             "customer_id": customer_id,

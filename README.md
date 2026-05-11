@@ -38,17 +38,18 @@ Open [http://localhost:8000](http://localhost:8000) to see your interactive docu
 Write business rules as Python pseudo-code:
 
 ```python
-from speks import ExternalService, MockResponse
+from speks import service, stub
 
-class CheckClientBalance(ExternalService):
-    def execute(self, client_id: str) -> float:
-        pass  # real HTTP call in production
+@service
+class CoreBanking:
+    """Core Banking API (blackbox)."""
 
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=1500.0)
+    @stub(mock=1500.0)
+    def check_balance(self, client_id: str) -> float:
+        ...  # real HTTP/SQL implementation here
 
 def evaluate_credit(client_id: str, amount: float) -> bool:
-    balance = CheckClientBalance().call(client_id)
+    balance = CoreBanking().check_balance(client_id)
     return balance > amount
 ```
 
@@ -93,7 +94,7 @@ Speks generates a live website where stakeholders can **read, understand, and te
 ```
 speks/               # The generator library & CLI
   core/              # Markdown parser, code extractor, dependency & sequence analysis
-  engine/            # Mocking system, external service base classes
+  engine/            # Mocking system (@service / @stub decorators, error overrides)
   web/               # Site builder, dev server (FastAPI)
   mkdocs_plugins/    # MkDocs plugins for each tag type
   i18n/              # Internationalization (en, fr)

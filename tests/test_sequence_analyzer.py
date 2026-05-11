@@ -18,21 +18,21 @@ from speks.core.dependency_analyzer import analyze_directory
 
 @pytest.fixture()
 def simple_project(tmp_path: Path) -> Path:
-    """Project with a single service call, no conditions."""
+    """Project with a single stub call, no conditions."""
     src = tmp_path / "src"
     src.mkdir()
     (src / "rules.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
-            class APIClient(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="ok")
+            @service
+            class APIClient:
+                @stub(mock="ok")
+                def fetch(self, x: str) -> str:
+                    ...
 
             def check(user_id: str) -> str:
-                return APIClient().call(user_id)
+                return APIClient().fetch(user_id)
         """),
         encoding="utf-8",
     )
@@ -41,40 +41,36 @@ def simple_project(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def conditional_project(tmp_path: Path) -> Path:
-    """Project with conditional service calls (if/else)."""
+    """Project with conditional stub calls (if/else)."""
     src = tmp_path / "src"
     src.mkdir()
     (src / "rules.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
-            class SvcA(ExternalService):
-                component_name = "AppX"
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="a")
+            @service
+            class AppX:
+                @stub(mock="a")
+                def call_a(self, x: str) -> str:
+                    ...
 
-            class SvcB(ExternalService):
-                component_name = "AppX"
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="b")
+                @stub(mock="b")
+                def call_b(self, x: str) -> str:
+                    ...
 
-            class SvcC(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="c")
+            @service
+            class AppY:
+                @stub(mock="c")
+                def call_c(self, x: str) -> str:
+                    ...
 
             def process(x: str, mode: str) -> str:
-                a = SvcA().call(x)
+                a = AppX().call_a(x)
                 if mode == "advanced":
-                    b = SvcB().call(x)
+                    b = AppX().call_b(x)
                     return b
                 else:
-                    c = SvcC().call(x)
+                    c = AppY().call_c(x)
                     return c
         """),
         encoding="utf-8",
@@ -84,29 +80,27 @@ def conditional_project(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def opt_project(tmp_path: Path) -> Path:
-    """Project with a simple if (no else) → opt block."""
+    """Project with a simple if (no else) -> opt block."""
     src = tmp_path / "src"
     src.mkdir()
     (src / "rules.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
-            class SvcA(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="a")
+            @service
+            class AppX:
+                @stub(mock="a")
+                def call_a(self, x: str) -> str:
+                    ...
 
-            class SvcB(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="b")
+                @stub(mock="b")
+                def call_b(self, x: str) -> str:
+                    ...
 
             def process(x: str, flag: bool) -> str:
-                a = SvcA().call(x)
+                a = AppX().call_a(x)
                 if flag:
-                    b = SvcB().call(x)
+                    b = AppX().call_b(x)
                 return a
         """),
         encoding="utf-8",
@@ -121,16 +115,16 @@ def funcall_project(tmp_path: Path) -> Path:
     src.mkdir()
     (src / "rules.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
-            class SvcA(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="a")
+            @service
+            class AppX:
+                @stub(mock="a")
+                def call_a(self, x: str) -> str:
+                    ...
 
             def helper(x: str) -> str:
-                return SvcA().call(x)
+                return AppX().call_a(x)
 
             def main_func(x: str) -> str:
                 result = helper(x)
@@ -142,43 +136,43 @@ def funcall_project(tmp_path: Path) -> Path:
 
 
 class TestExtractSequence:
-    def test_simple_service_call(self, simple_project: Path) -> None:
+    def test_simple_stub_call(self, simple_project: Path) -> None:
         graph = analyze_directory(simple_project / "src", simple_project)
         steps, participants = extract_sequence(
             "check", graph, simple_project / "src", simple_project,
         )
         assert len(steps) == 1
         assert isinstance(steps[0], ServiceCallStep)
-        assert steps[0].service_name == "APIClient"
-        assert "APIClient" in participants
+        assert steps[0].service_name == "APIClient.fetch"
+        assert "APIClient.fetch" in participants
 
     def test_conditional_branches(self, conditional_project: Path) -> None:
         graph = analyze_directory(conditional_project / "src", conditional_project)
         steps, participants = extract_sequence(
             "process", graph, conditional_project / "src", conditional_project,
         )
-        # First: unconditional SvcA call
         assert isinstance(steps[0], ServiceCallStep)
-        assert steps[0].service_name == "SvcA"
-        # Second: conditional block
+        assert steps[0].service_name == "AppX.call_a"
         assert isinstance(steps[1], ConditionalBlock)
         assert len(steps[1].branches) == 2  # if + else
-        # if branch has SvcB
         if_steps = steps[1].branches[0][1]
-        assert any(isinstance(s, ServiceCallStep) and s.service_name == "SvcB" for s in if_steps)
-        # else branch has SvcC
+        assert any(
+            isinstance(s, ServiceCallStep) and s.service_name == "AppX.call_b"
+            for s in if_steps
+        )
         else_steps = steps[1].branches[1][1]
-        assert any(isinstance(s, ServiceCallStep) and s.service_name == "SvcC" for s in else_steps)
+        assert any(
+            isinstance(s, ServiceCallStep) and s.service_name == "AppY.call_c"
+            for s in else_steps
+        )
 
     def test_opt_block(self, opt_project: Path) -> None:
         graph = analyze_directory(opt_project / "src", opt_project)
         steps, participants = extract_sequence(
             "process", graph, opt_project / "src", opt_project,
         )
-        # Unconditional SvcA
         assert isinstance(steps[0], ServiceCallStep)
-        assert steps[0].service_name == "SvcA"
-        # Conditional block with single branch (opt)
+        assert steps[0].service_name == "AppX.call_a"
         assert isinstance(steps[1], ConditionalBlock)
         assert len(steps[1].branches) == 1
 
@@ -204,8 +198,8 @@ class TestExtractSequence:
         _, participants = extract_sequence(
             "process", graph, conditional_project / "src", conditional_project,
         )
-        assert participants["SvcA"].display_name == "AppX / SvcA"
-        assert participants["SvcB"].display_name == "AppX / SvcB"
+        assert participants["AppX.call_a"].display_name == "AppX / call_a"
+        assert participants["AppX.call_b"].display_name == "AppX / call_b"
 
 
 class TestRenderMermaid:
@@ -217,9 +211,9 @@ class TestRenderMermaid:
         mermaid = render_sequence_mermaid("check", steps, participants)
         assert "sequenceDiagram" in mermaid
         assert "participant check" in mermaid
-        assert "participant APIClient" in mermaid
-        assert "check->>+APIClient:" in mermaid
-        assert "APIClient-->>-check: response" in mermaid
+        assert "participant APIClient__fetch" in mermaid
+        assert "check->>+APIClient__fetch:" in mermaid
+        assert "APIClient__fetch-->>-check: response" in mermaid
 
     def test_alt_block(self, conditional_project: Path) -> None:
         graph = analyze_directory(conditional_project / "src", conditional_project)
@@ -230,9 +224,8 @@ class TestRenderMermaid:
         assert "alt " in mermaid
         assert "else" in mermaid
         assert "end" in mermaid
-        # Both conditional services should appear
-        assert "SvcB" in mermaid
-        assert "SvcC" in mermaid
+        assert "AppX__call_b" in mermaid
+        assert "AppY__call_c" in mermaid
 
     def test_opt_block(self, opt_project: Path) -> None:
         graph = analyze_directory(opt_project / "src", opt_project)
@@ -242,7 +235,7 @@ class TestRenderMermaid:
         mermaid = render_sequence_mermaid("process", steps, participants)
         assert "opt " in mermaid
         assert "end" in mermaid
-        assert "SvcB" in mermaid
+        assert "AppX__call_b" in mermaid
 
     def test_display_names_in_diagram(self, conditional_project: Path) -> None:
         graph = analyze_directory(conditional_project / "src", conditional_project)
@@ -250,8 +243,8 @@ class TestRenderMermaid:
             "process", graph, conditional_project / "src", conditional_project,
         )
         mermaid = render_sequence_mermaid("process", steps, participants)
-        assert "AppX / SvcA" in mermaid
-        assert "AppX / SvcB" in mermaid
+        assert "AppX / call_a" in mermaid
+        assert "AppX / call_b" in mermaid
 
     def test_function_call_in_diagram(self, funcall_project: Path) -> None:
         graph = analyze_directory(funcall_project / "src", funcall_project)
@@ -292,33 +285,29 @@ class TestElifChain:
         src.mkdir()
         (src / "rules.py").write_text(
             textwrap.dedent("""\
-                from speks import ExternalService, MockResponse
+                from speks import service, stub
 
-                class SvcA(ExternalService):
-                    def execute(self, x: str) -> str:
-                        pass
-                    def mock(self, x: str) -> MockResponse:
-                        return MockResponse(data="a")
+                @service
+                class App:
+                    @stub(mock="a")
+                    def call_a(self, x: str) -> str:
+                        ...
 
-                class SvcB(ExternalService):
-                    def execute(self, x: str) -> str:
-                        pass
-                    def mock(self, x: str) -> MockResponse:
-                        return MockResponse(data="b")
+                    @stub(mock="b")
+                    def call_b(self, x: str) -> str:
+                        ...
 
-                class SvcC(ExternalService):
-                    def execute(self, x: str) -> str:
-                        pass
-                    def mock(self, x: str) -> MockResponse:
-                        return MockResponse(data="c")
+                    @stub(mock="c")
+                    def call_c(self, x: str) -> str:
+                        ...
 
                 def multi(x: str, mode: int) -> str:
                     if mode == 1:
-                        return SvcA().call(x)
+                        return App().call_a(x)
                     elif mode == 2:
-                        return SvcB().call(x)
+                        return App().call_b(x)
                     else:
-                        return SvcC().call(x)
+                        return App().call_c(x)
             """),
             encoding="utf-8",
         )
@@ -326,10 +315,9 @@ class TestElifChain:
         assert result is not None
         assert "alt mode == 1" in result
         assert "else mode == 2" in result
-        assert "SvcA" in result
-        assert "SvcB" in result
-        assert "SvcC" in result
-        # Should have exactly one 'end' for the alt block
+        assert "App__call_a" in result
+        assert "App__call_b" in result
+        assert "App__call_c" in result
         assert result.count("end") == 1
 
 

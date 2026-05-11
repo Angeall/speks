@@ -7,9 +7,18 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from speks.i18n import set_locale
 from speks.mkdocs_plugins.tags import SpeksTagsPlugin, _resolve_code, _resolve_plantuml, _resolve_mermaid, _resolve_playground, _resolve_contract
 from speks.mkdocs_plugins.playground import SpeksPlaygroundPlugin
 from speks.mkdocs_plugins.dependencies import _resolve_dependencies
+
+
+@pytest.fixture(autouse=True)
+def _english_locale():
+    """Force the English locale so test assertions match catalog values."""
+    set_locale("en")
+    yield
+    set_locale("fr")
 
 
 @pytest.fixture()
@@ -18,21 +27,23 @@ def workspace(tmp_path: Path) -> Path:
     src.mkdir()
     (src / "regles.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
             class MyService:
                 pass
 
-            class SoldeAPI(ExternalService):
+            @service
+            class SoldeAPI:
                 \"\"\"API Solde.\"\"\"
-                def execute(self, x: str) -> float:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data=1500.0)
+
+                @stub(mock=1500.0)
+                def fetch(self, x: str) -> float:
+                    \"\"\"Fetch the balance.\"\"\"
+                    ...
 
             def evaluer(x: int) -> bool:
                 \"\"\"Check x.\"\"\"
-                solde = SoldeAPI().call(str(x))
+                solde = SoldeAPI().fetch(str(x))
                 return solde > 0
 
             def evaluer_avance(client_id: str, montant: float, seuil: int = 600) -> dict:
@@ -72,9 +83,9 @@ class TestResolveCode:
         assert "not found" in result
 
     def test_class_method(self, workspace: Path) -> None:
-        result = _resolve_code("src/regles.py:SoldeAPI:execute", workspace)
+        result = _resolve_code("src/regles.py:SoldeAPI:fetch", workspace)
         assert "```python" in result
-        assert "def execute" in result
+        assert "def fetch" in result
 
     def test_class_method_missing(self, workspace: Path) -> None:
         result = _resolve_code("src/regles.py:SoldeAPI:nonexistent", workspace)
@@ -131,8 +142,8 @@ class TestResolvePlayground:
 
     def test_mock_config_contains_service(self, workspace: Path) -> None:
         result = _resolve_playground("src/regles.py:evaluer", workspace)
-        assert "SoldeAPI" in result
-        assert 'data-service="SoldeAPI"' in result
+        assert "SoldeAPI / fetch" in result
+        assert 'data-service="SoldeAPI.fetch"' in result
 
     def test_mock_config_default_value(self, workspace: Path) -> None:
         result = _resolve_playground("src/regles.py:evaluer", workspace)
@@ -140,7 +151,8 @@ class TestResolvePlayground:
 
     def test_mock_config_includes_docstring(self, workspace: Path) -> None:
         result = _resolve_playground("src/regles.py:evaluer", workspace)
-        assert "API Solde" in result
+        # Stub method docstring is what describes the call.
+        assert "Fetch the balance" in result
 
     def test_testcase_panel_rendered(self, workspace: Path) -> None:
         result = _resolve_playground("src/regles.py:evaluer", workspace)
@@ -185,20 +197,20 @@ class TestResolvePlayground:
         (src / "svc.py").write_text(
             textwrap.dedent("""\
                 from pydantic import BaseModel
-                from speks import ExternalService, MockResponse
+                from speks import service, stub
 
                 class ProductInfo(BaseModel):
                     name: str
                     price: float
 
-                class FetchProduct(ExternalService):
-                    def execute(self, pid: str) -> ProductInfo:
-                        pass
-                    def mock(self, pid: str) -> MockResponse:
-                        return MockResponse(data=ProductInfo(name="Widget", price=9.99))
+                @service
+                class ProductCatalog:
+                    @stub(mock=ProductInfo(name="Widget", price=9.99))
+                    def fetch(self, pid: str) -> ProductInfo:
+                        ...
 
                 def get_product(pid: str) -> dict:
-                    return FetchProduct().call(pid)
+                    return ProductCatalog().fetch(pid)
             """),
             encoding="utf-8",
         )
@@ -263,9 +275,9 @@ class TestResolveContract:
         assert "file not found" in result
 
     def test_class_method_contract(self, workspace: Path) -> None:
-        result = _resolve_contract("src/regles.py:SoldeAPI:execute", workspace)
+        result = _resolve_contract("src/regles.py:SoldeAPI:fetch", workspace)
         assert "speks-contract" in result
-        assert "SoldeAPI.execute" in result
+        assert "SoldeAPI.fetch" in result
         assert "<code>x</code>" in result
         assert "<code>str</code>" in result
 
@@ -566,19 +578,19 @@ def dep_workspace(tmp_path: Path) -> Path:
     src.mkdir()
     (src / "services.py").write_text(
         textwrap.dedent("""\
-            from speks import ExternalService, MockResponse
+            from speks import service, stub
 
-            class PaymentAPI(ExternalService):
-                def execute(self, x: str) -> str:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data="ok")
+            @service
+            class PaymentAPI:
+                @stub(mock="ok")
+                def charge(self, x: str) -> str:
+                    ...
 
-            class FraudCheck(ExternalService):
-                def execute(self, x: str) -> bool:
-                    pass
-                def mock(self, x: str) -> MockResponse:
-                    return MockResponse(data=False)
+            @service
+            class FraudCheck:
+                @stub(mock=False)
+                def is_fraud(self, x: str) -> bool:
+                    ...
         """),
         encoding="utf-8",
     )
@@ -587,12 +599,12 @@ def dep_workspace(tmp_path: Path) -> Path:
             from .services import PaymentAPI, FraudCheck
 
             def validate(user_id: str) -> bool:
-                return not FraudCheck().call(user_id)
+                return not FraudCheck().is_fraud(user_id)
 
             def process_payment(user_id: str, amount: float) -> dict:
                 ok = validate(user_id)
                 if ok:
-                    PaymentAPI().call(user_id)
+                    PaymentAPI().charge(user_id)
                 return {"processed": ok}
         """),
         encoding="utf-8",
@@ -604,8 +616,8 @@ class TestResolveDependencies:
     def test_full_directory(self, dep_workspace: Path) -> None:
         result = _resolve_dependencies("src/", dep_workspace)
         assert "```mermaid" in result
-        assert "PaymentAPI" in result
-        assert "FraudCheck" in result
+        assert "PaymentAPI / charge" in result
+        assert "FraudCheck / is_fraud" in result
         assert "validate" in result
         assert "process_payment" in result
 
@@ -614,14 +626,14 @@ class TestResolveDependencies:
         assert "```mermaid" in result
         assert "process_payment" in result
         assert "validate" in result
-        assert "FraudCheck" in result
-        assert "PaymentAPI" in result
+        assert "FraudCheck / is_fraud" in result
+        assert "PaymentAPI / charge" in result
         assert "classDef entry" in result
 
     def test_focused_leaf_function(self, dep_workspace: Path) -> None:
         result = _resolve_dependencies("src/logic.py:validate", dep_workspace)
         assert "```mermaid" in result
-        assert "FraudCheck" in result
+        assert "FraudCheck / is_fraud" in result
         # validate doesn't call PaymentAPI
         assert "PaymentAPI" not in result
 

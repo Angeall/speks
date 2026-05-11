@@ -644,19 +644,20 @@ def _build_mock_fields(file_path: Path, root: Path, func_name: str) -> str:
     mock_fields = '  <details class="speks-mock-config" open>\n'
     mock_fields += f'    <summary>{t("playground.mock_config")}</summary>\n'
     for svc in mock_defaults:
-        svc_name = svc["name"]
+        svc_name = svc["name"]  # dotted "ClassName.method_name"
+        # HTML id-safe form: dots break CSS selectors with `#id` syntax.
+        svc_id = svc_name.replace(".", "__")
         svc_display = svc.get("display_name") or svc_name
         svc_doc = svc["docstring"] or ""
         doc_html = f" <em>— {html_mod.escape(svc_doc)}</em>" if svc_doc else ""
         mock_fields += (
             f'    <div class="speks-mock-field">\n'
-            f'      <label for="speks-mock-{func_name}-{svc_name}">'
+            f'      <label for="speks-mock-{func_name}-{svc_id}">'
             f'{html_mod.escape(svc_display)}{doc_html}</label>\n'
         )
 
         pydantic_fields = svc.get("pydantic_fields")
         if pydantic_fields:
-            # Render individual input fields for each Pydantic model field
             mock_fields += (
                 f'      <div class="speks-mock-pydantic" data-service="{svc_name}">\n'
             )
@@ -664,14 +665,20 @@ def _build_mock_fields(file_path: Path, root: Path, func_name: str) -> str:
                 pf_name = pf["name"]
                 pf_ann = pf["annotation"]
                 pf_default = pf.get("default")
-                pf_default_str = "" if pf_default is None else html_mod.escape(str(pf_default))
+                if pf_default is None:
+                    pf_default_str = ""
+                elif isinstance(pf_default, (list, dict)):
+                    import json as _json
+                    pf_default_str = html_mod.escape(_json.dumps(pf_default, ensure_ascii=False))
+                else:
+                    pf_default_str = html_mod.escape(str(pf_default))
                 input_type = "number" if pf_ann in ("int", "float") else "text"
                 step = 'step="any"' if pf_ann == "float" else ""
                 mock_fields += (
                     f'        <div class="speks-mock-pydantic-field">'
-                    f'<label for="speks-mock-{func_name}-{svc_name}-{pf_name}">'
+                    f'<label for="speks-mock-{func_name}-{svc_id}-{pf_name}">'
                     f'{pf_name} <code>({pf_ann})</code></label>'
-                    f'<input id="speks-mock-{func_name}-{svc_name}-{pf_name}" '
+                    f'<input id="speks-mock-{func_name}-{svc_id}-{pf_name}" '
                     f'class="speks-mock-pydantic-input" '
                     f'data-service="{svc_name}" data-field="{pf_name}" '
                     f'type="{input_type}" {step} '
@@ -680,15 +687,14 @@ def _build_mock_fields(file_path: Path, root: Path, func_name: str) -> str:
                 )
             mock_fields += "      </div>\n"
         else:
-            # Fallback: raw JSON textarea
             default_json = html_mod.escape(svc["default_json"])
             mock_fields += (
-                f'      <textarea id="speks-mock-{func_name}-{svc_name}" '
+                f'      <textarea id="speks-mock-{func_name}-{svc_id}" '
                 f'class="speks-mock-input" '
                 f'data-service="{svc_name}">{default_json}</textarea>\n'
             )
 
-        # Error mock section — structured fields for MockErrorResponse
+        # Error mock section
         error_default = svc.get("error_default") or {
             "error_code": "ERR_EXAMPLE",
             "error_message": "Example error",
@@ -706,23 +712,23 @@ def _build_mock_fields(file_path: Path, root: Path, func_name: str) -> str:
             f'        </label>\n'
             f'        <div class="speks-error-fields" data-service="{svc_name}">\n'
             f'          <div class="speks-error-field">'
-            f'<label for="speks-errcode-{func_name}-{svc_name}">'
+            f'<label for="speks-errcode-{func_name}-{svc_id}">'
             f'error_code</label>'
-            f'<input id="speks-errcode-{func_name}-{svc_name}" '
+            f'<input id="speks-errcode-{func_name}-{svc_id}" '
             f'class="speks-error-field-input" data-service="{svc_name}" '
             f'data-error-field="error_code" type="text" '
             f'value="{err_code}" disabled></div>\n'
             f'          <div class="speks-error-field">'
-            f'<label for="speks-errmsg-{func_name}-{svc_name}">'
+            f'<label for="speks-errmsg-{func_name}-{svc_id}">'
             f'error_message</label>'
-            f'<input id="speks-errmsg-{func_name}-{svc_name}" '
+            f'<input id="speks-errmsg-{func_name}-{svc_id}" '
             f'class="speks-error-field-input" data-service="{svc_name}" '
             f'data-error-field="error_message" type="text" '
             f'value="{err_msg}" disabled></div>\n'
             f'          <div class="speks-error-field">'
-            f'<label for="speks-errhttp-{func_name}-{svc_name}">'
+            f'<label for="speks-errhttp-{func_name}-{svc_id}">'
             f'http_code</label>'
-            f'<input id="speks-errhttp-{func_name}-{svc_name}" '
+            f'<input id="speks-errhttp-{func_name}-{svc_id}" '
             f'class="speks-error-field-input" data-service="{svc_name}" '
             f'data-error-field="http_code" type="number" '
             f'value="{err_http}" disabled></div>\n'

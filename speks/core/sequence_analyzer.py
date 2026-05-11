@@ -3,7 +3,8 @@
 Walks a function body **in order** and builds a list of
 :class:`SequenceStep` objects that represent:
 
-* service calls  (``ServiceClass().call(...)``)
+* stub calls    (``EntityClass().method_name(...)`` where the entity is
+  decorated with ``@service`` and the method with ``@stub``)
 * function calls (``other_function(...)``)
 * conditional blocks (``if … / elif … / else``)
 
@@ -22,6 +23,7 @@ from typing import Any
 from speks.core.dependency_analyzer import (
     DependencyGraph,
     ServiceNode,
+    _collect_entity_aliases,
     analyze_directory,
 )
 
@@ -33,10 +35,10 @@ from speks.core.dependency_analyzer import (
 
 @dataclass
 class ServiceCallStep:
-    """A call to an ExternalService."""
+    """A call to a ``@stub`` method on a ``@service`` entity."""
 
     caller: str
-    service_name: str
+    service_name: str  # dotted "EntityClass.method_name"
     display_name: str
     args_text: str = ""
 
@@ -109,7 +111,10 @@ def extract_sequence(
         return [], {}
 
     participants: dict[str, ServiceNode] = {}
-    steps = _walk_body(func_node.body, func_name, graph, all_functions, participants)
+    aliases = _collect_entity_aliases(func_node, graph)
+    steps = _walk_body(
+        func_node.body, func_name, graph, all_functions, participants, aliases,
+    )
     return steps, participants
 
 
@@ -119,33 +124,65 @@ def _walk_body(
     graph: DependencyGraph,
     all_functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
     participants: dict[str, ServiceNode],
+    aliases: dict[str, str] | None = None,
 ) -> list[SequenceStep]:
     """Walk a list of statements and extract sequence steps in order."""
     steps: list[SequenceStep] = []
+    aliases = aliases or {}
 
     for stmt in body:
         if isinstance(stmt, ast.If):
-            block = _process_if(stmt, current_func, graph, all_functions, participants)
+            block = _process_if(stmt, current_func, graph, all_functions, participants, aliases)
             if _block_has_calls(block):
                 steps.append(block)
             continue
 
+        if isinstance(stmt, ast.Try):
+            steps.extend(_walk_body(
+                stmt.body, current_func, graph, all_functions, participants, aliases,
+            ))
+            for handler in stmt.handlers:
+                steps.extend(_walk_body(
+                    handler.body, current_func, graph, all_functions, participants, aliases,
+                ))
+            if stmt.orelse:
+                steps.extend(_walk_body(
+                    stmt.orelse, current_func, graph, all_functions, participants, aliases,
+                ))
+            if stmt.finalbody:
+                steps.extend(_walk_body(
+                    stmt.finalbody, current_func, graph, all_functions, participants, aliases,
+                ))
+            continue
+
+        if isinstance(stmt, (ast.For, ast.While, ast.AsyncFor)):
+            steps.extend(_walk_body(
+                stmt.body, current_func, graph, all_functions, participants, aliases,
+            ))
+            continue
+
+        if isinstance(stmt, ast.With):
+            steps.extend(_walk_body(
+                stmt.body, current_func, graph, all_functions, participants, aliases,
+            ))
+            continue
+
         if isinstance(stmt, ast.Return):
             if stmt.value is not None:
-                # Extract calls embedded in the return expression first
                 for node in ast.walk(stmt.value):
                     if isinstance(node, ast.Call):
                         step = _classify_call(
-                            node, current_func, graph, all_functions, participants,
+                            node, current_func, graph, all_functions, participants, aliases,
                         )
                         if step is not None:
                             steps.append(step)
             continue
 
-        # Look for calls in assignments and expression statements
         call_nodes = _extract_calls_from_stmt(stmt)
         for call_node in call_nodes:
-            step = _classify_call(call_node, current_func, graph, all_functions, participants)
+            step = _classify_call(
+                call_node, current_func, graph, all_functions, participants, aliases,
+            )
             if step is not None:
                 steps.append(step)
 
@@ -158,28 +195,30 @@ def _process_if(
     graph: DependencyGraph,
     all_functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
     participants: dict[str, ServiceNode],
+    aliases: dict[str, str] | None = None,
 ) -> ConditionalBlock:
     """Convert an ``if`` / ``elif`` / ``else`` chain into a ConditionalBlock."""
     block = ConditionalBlock()
+    aliases = aliases or {}
 
-    # if branch
     cond_text = _unparse_safe(node.test)
-    if_steps = _walk_body(node.body, current_func, graph, all_functions, participants)
+    if_steps = _walk_body(node.body, current_func, graph, all_functions, participants, aliases)
     block.branches.append((cond_text, if_steps))
 
-    # elif / else chain
     orelse = node.orelse
     while orelse:
         if len(orelse) == 1 and isinstance(orelse[0], ast.If):
-            # elif
             elif_node = orelse[0]
             elif_cond = _unparse_safe(elif_node.test)
-            elif_steps = _walk_body(elif_node.body, current_func, graph, all_functions, participants)
+            elif_steps = _walk_body(
+                elif_node.body, current_func, graph, all_functions, participants, aliases,
+            )
             block.branches.append((elif_cond, elif_steps))
             orelse = elif_node.orelse
         else:
-            # else
-            else_steps = _walk_body(orelse, current_func, graph, all_functions, participants)
+            else_steps = _walk_body(
+                orelse, current_func, graph, all_functions, participants, aliases,
+            )
             block.branches.append(("", else_steps))
             break
 
@@ -213,27 +252,34 @@ def _classify_call(
     graph: DependencyGraph,
     all_functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
     participants: dict[str, ServiceNode],
+    aliases: dict[str, str] | None = None,
 ) -> SequenceStep | None:
-    """Classify a call node as a service call, function call, or None."""
-    # Pattern: ServiceClass().call(...)
-    if isinstance(node.func, ast.Attribute) and node.func.attr == "call":
+    """Classify a call node as a stub call, function call, or None."""
+    aliases = aliases or {}
+    # Pattern: EntityClass().method_name(...) (direct) or  alias.method_name(...)
+    # where alias was bound earlier via ``alias = EntityClass()``.
+    if isinstance(node.func, ast.Attribute):
+        method_name = node.func.attr
         inner = node.func.value
+        class_name: str | None = None
         if isinstance(inner, ast.Call):
-            svc_name = None
             if isinstance(inner.func, ast.Name):
-                svc_name = inner.func.id
+                class_name = inner.func.id
             elif isinstance(inner.func, ast.Attribute):
-                svc_name = inner.func.attr
-            if svc_name and svc_name in graph.services:
-                svc = graph.services[svc_name]
-                participants[svc_name] = svc
-                args_text = _unparse_args(node)
-                return ServiceCallStep(
-                    caller=current_func,
-                    service_name=svc_name,
-                    display_name=svc.display_name,
-                    args_text=args_text,
-                )
+                class_name = inner.func.attr
+        elif isinstance(inner, ast.Name):
+            class_name = aliases.get(inner.id)
+        if class_name and graph.has_stub(class_name, method_name):
+            dotted = f"{class_name}.{method_name}"
+            svc = graph.services[dotted]
+            participants[dotted] = svc
+            args_text = _unparse_args(node)
+            return ServiceCallStep(
+                caller=current_func,
+                service_name=dotted,
+                display_name=svc.display_name,
+                args_text=args_text,
+            )
 
     # Pattern: other_function(...)
     if isinstance(node.func, ast.Name):
@@ -307,18 +353,24 @@ def render_sequence_mermaid(
 
     lines: list[str] = ["sequenceDiagram"]
 
-    # Declare participants
+    # Declare participants. Mermaid IDs must be alphanumeric — replace
+    # dots from dotted stub names ("Entity.method") with double underscores.
     lines.append(f"    participant {func_name}")
     for fname in sorted(called_functions):
         lines.append(f"    participant {fname}")
     for svc_name in sorted(participants):
         svc = participants[svc_name]
-        lines.append(f'    participant {svc_name} as {svc.display_name}')
+        lines.append(f'    participant {_safe_id(svc_name)} as {svc.display_name}')
 
     # Render steps
     _render_steps(lines, steps, func_name, indent=1)
 
     return "\n".join(lines)
+
+
+def _safe_id(name: str) -> str:
+    """Replace dots in a dotted name to make a Mermaid-safe identifier."""
+    return name.replace(".", "__")
 
 
 def _render_steps(
@@ -333,8 +385,9 @@ def _render_steps(
     for step in steps:
         if isinstance(step, ServiceCallStep):
             label = step.args_text or " "
-            lines.append(f"{pad}{current_func}->>+{step.service_name}: {label}")
-            lines.append(f"{pad}{step.service_name}-->>-{current_func}: response")
+            sid = _safe_id(step.service_name)
+            lines.append(f"{pad}{current_func}->>+{sid}: {label}")
+            lines.append(f"{pad}{sid}-->>-{current_func}: response")
 
         elif isinstance(step, FunctionCallStep):
             label = step.args_text or " "

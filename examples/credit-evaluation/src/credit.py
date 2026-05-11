@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockErrorResponse, MockResponse, ServiceError
+from speks import MockError, ServiceError, service, stub
 
 
 class ClientBalance(BaseModel):
@@ -21,51 +21,33 @@ class CreditHistory(BaseModel):
     last_check_date: str = "unknown"  # Date of last credit check
 
 
-class CheckClientBalance(ExternalService):
-    """Call to the Core Banking API (Blackbox)."""
+@service
+class CoreBanking:
+    """Core Banking API (blackbox)."""
 
-    component_name = "CoreBanking"
-
-    def execute(self, client_id: str) -> ClientBalance:
-        """
-        Calls backend to check client's balance
-        :param client_id: The param representing the client
-        :return: The balance of the customer
-        """
-        pass  # type: ignore[return-value]
-
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=ClientBalance(
-            balance=1500.0,
-            currency="USD",
-            account_status="active",
-        ))
-
-    def mock_error(self, client_id: str) -> MockErrorResponse:
-        return MockErrorResponse(
-            error_code="CLIENT_NOT_FOUND",
-            error_message="The specified client was not found.",
+    @stub(
+        mock=ClientBalance(balance=1500.0, currency="USD", account_status="active"),
+        error=MockError(
+            "CLIENT_NOT_FOUND",
+            "The specified client was not found.",
             http_code=404,
-        )
+        ),
+    )
+    def check_balance(self, client_id: str) -> ClientBalance:
+        """Fetch the client's current balance."""
+        ...  # real HTTP/SQL implementation
 
-
-class CheckCreditHistory(ExternalService):
-    """Call to the credit history service (Blackbox)."""
-
-    component_name = "CoreBanking"
-
-    def execute(self, client_id: str) -> CreditHistory:
-        pass  # type: ignore[return-value]
-
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=CreditHistory(score=720, incidents=0))
-
-    def mock_error(self, client_id: str) -> MockErrorResponse:
-        return MockErrorResponse(
-            error_code="CREDIT_HISTORY_UNAVAILABLE",
-            error_message="Credit history service is unavailable.",
+    @stub(
+        mock=CreditHistory(score=720, incidents=0),
+        error=MockError(
+            "CREDIT_HISTORY_UNAVAILABLE",
+            "Credit history service is unavailable.",
             http_code=503,
-        )
+        ),
+    )
+    def check_credit_history(self, client_id: str) -> CreditHistory:
+        """Fetch the client's credit bureau history."""
+        ...
 
 
 def evaluate_credit(client_id: str, amount: float) -> bool:
@@ -78,7 +60,7 @@ def evaluate_credit(client_id: str, amount: float) -> bool:
     :return: True if the credit is approved
     """
     try:
-        result = CheckClientBalance().call(client_id)
+        result = CoreBanking().check_balance(client_id)
     except ServiceError:
         return False
     return result.balance > amount
@@ -94,7 +76,9 @@ class CreditDecision(BaseModel):
     reasons: list[str] = []  # Reasons for denial, if any
 
 
-def evaluate_credit_advanced(client_id: str, amount: float, score_threshold: int = 600) -> Optional[CreditDecision]:
+def evaluate_credit_advanced(
+    client_id: str, amount: float, score_threshold: int = 600,
+) -> CreditDecision:
     """Advanced evaluation combining balance and credit score.
 
     :param client_id: Unique identifier of the client
@@ -102,10 +86,11 @@ def evaluate_credit_advanced(client_id: str, amount: float, score_threshold: int
     :param score_threshold: Minimum credit score required for approval
     :return: Structured decision with approval status and details
     """
-    result = CheckClientBalance().call(client_id)
+    bank = CoreBanking()
+    result = bank.check_balance(client_id)
 
     if result.balance > amount:
-        history = CheckCreditHistory().call(client_id)
+        history = bank.check_credit_history(client_id)
         score_ok = history.score >= score_threshold
         incidents_ok = history.incidents == 0
         reasons = [

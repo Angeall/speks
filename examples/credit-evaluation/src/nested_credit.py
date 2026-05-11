@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from speks import ServiceError
 
-from .credit import CheckClientBalance
+from .credit import CoreBanking
 from .models import ClientProfile, RiskAssessment
 
 
@@ -24,7 +24,7 @@ def evaluate_premium_credit(profile: ClientProfile, amount: float) -> RiskAssess
     :return: Detailed risk assessment
     """
     try:
-        result = CheckClientBalance().call(profile.client_id)
+        result = CoreBanking().check_balance(profile.client_id)
     except ServiceError:
         return RiskAssessment(
             risk_level="HIGH",

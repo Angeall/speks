@@ -128,7 +128,7 @@ def create_app(project_root: Path, site_dir: Path) -> FastAPI:
             return result, get_call_log(), None
         except ServiceError as exc:
             error_info = {
-                "service": exc.service_name,
+                "service": f"{exc.service_name}.{exc.method_name}",
                 "error_code": exc.error_code,
                 "error_message": exc.error_message,
                 "http_code": exc.http_code,
@@ -435,39 +435,67 @@ def _load_user_modules(src_dir: Path) -> dict[str, types.ModuleType]:
         rel_parts = pkg_dir.relative_to(src_dir).parts
         _ensure_package(pkg_dir, rel_parts)
 
-    # Load every non-init module under its proper dotted name.
-    for py_file in sorted(src_dir.rglob("*.py")):
-        if py_file.name == "__init__.py":
-            continue
-        rel = py_file.relative_to(src_dir)
-        pkg_rel_parts = rel.parent.parts if rel.parent != Path(".") else ()
-        mod_stem = py_file.stem
-        pkg_name = _pkg_name(pkg_rel_parts)
-        module_name = f"{pkg_name}.{mod_stem}"
-        rel_dotted = ".".join((*pkg_rel_parts, mod_stem))
-        # Skip if already loaded (via a package ``__init__`` import chain).
-        if module_name in sys.modules:
-            modules[rel_dotted] = sys.modules[module_name]
-            continue
-        spec = importlib.util.spec_from_file_location(module_name, py_file)
-        if not spec or not spec.loader:
-            continue
-        mod = importlib.util.module_from_spec(spec)
-        mod.__package__ = pkg_name
-        sys.modules[module_name] = mod
-        parent_mod = sys.modules.get(pkg_name)
-        if parent_mod is not None:
-            setattr(parent_mod, mod_stem, mod)
-        try:
-            spec.loader.exec_module(mod)
-        except Exception as exc:
-            print(
-                f"[speks] failed to load module {module_name} "
-                f"({py_file}): {exc}",
-                file=sys.stderr,
-            )
-            continue
-        modules[rel_dotted] = mod
+    # Multi-pass module loading: when a module fails to load because of a
+    # cross-module relative import, retry it after sibling modules have been
+    # loaded.  Stop when a pass makes no progress.
+    pending: list[Path] = [
+        p for p in sorted(src_dir.rglob("*.py")) if p.name != "__init__.py"
+    ]
+    last_error: dict[Path, str] = {}
+
+    while True:
+        progress = False
+        still_pending: list[Path] = []
+        for py_file in pending:
+            rel = py_file.relative_to(src_dir)
+            pkg_rel_parts = rel.parent.parts if rel.parent != Path(".") else ()
+            mod_stem = py_file.stem
+            pkg_name = _pkg_name(pkg_rel_parts)
+            module_name = f"{pkg_name}.{mod_stem}"
+            rel_dotted = ".".join((*pkg_rel_parts, mod_stem))
+
+            # Already loaded via a sibling's import chain.
+            if module_name in sys.modules and rel_dotted in modules:
+                continue
+            if module_name in sys.modules and rel_dotted not in modules:
+                modules[rel_dotted] = sys.modules[module_name]
+                progress = True
+                continue
+
+            spec = importlib.util.spec_from_file_location(module_name, py_file)
+            if not spec or not spec.loader:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            mod.__package__ = pkg_name
+            sys.modules[module_name] = mod
+            parent_mod = sys.modules.get(pkg_name)
+            if parent_mod is not None:
+                setattr(parent_mod, mod_stem, mod)
+            try:
+                spec.loader.exec_module(mod)
+            except Exception as exc:
+                # Roll back the partial registration so a later pass can retry.
+                sys.modules.pop(module_name, None)
+                if parent_mod is not None and hasattr(parent_mod, mod_stem):
+                    delattr(parent_mod, mod_stem)
+                last_error[py_file] = f"{type(exc).__name__}: {exc}"
+                still_pending.append(py_file)
+                continue
+            modules[rel_dotted] = mod
+            progress = True
+
+        pending = still_pending
+        if not pending or not progress:
+            break
+
+    # Anything still pending after we stopped making progress is a real error.
+    for py_file in pending:
+        msg = last_error.get(py_file, "unknown")
+        print(
+            f"[speks] failed to load module {py_file}: {msg}",
+            file=sys.stderr,
+        )
+
     return modules
 
 

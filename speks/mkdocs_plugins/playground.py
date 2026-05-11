@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {{
     const btn = form.querySelector('.speks-run-btn');
     if (!btn) return;
     function check() {{
-      const missing = form.querySelectorAll('input[required]:not(.speks-error-checkbox):not(.speks-mock-pydantic-input):not(.speks-error-field-input)');
+      const missing = form.querySelectorAll('input[required]:not(.speks-error-checkbox):not(.speks-mock-pydantic-input):not(.speks-error-field-input):not(.speks-structured-input)');
       btn.disabled = Array.from(missing).some(i => !i.value.trim());
     }}
     form.addEventListener('input', check);

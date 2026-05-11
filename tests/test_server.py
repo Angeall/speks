@@ -99,3 +99,119 @@ class TestMakeJsonSafe:
             b: str
 
         assert _make_json_safe(Dc(a=1, b="x")) == {"a": 1, "b": "x"}
+
+
+# ---------------------------------------------------------------------------
+# /api/run end-to-end with @service / @stub
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def stub_project(tmp_path: Path) -> Path:
+    """A minimal project that uses the new @service / @stub API."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "rules.py").write_text(
+        "from speks import service, stub, MockError, ServiceError\n"
+        "\n"
+        "@service\n"
+        "class CoreBanking:\n"
+        "    @stub(\n"
+        "        mock=1500.0,\n"
+        '        error=MockError("CLIENT_NOT_FOUND", "not found", http_code=404),\n'
+        "    )\n"
+        "    def check_balance(self, client_id: str) -> float:\n"
+        "        ...\n"
+        "\n"
+        "def evaluate_credit(client_id: str, amount: float) -> bool:\n"
+        "    try:\n"
+        "        balance = CoreBanking().check_balance(client_id)\n"
+        "    except ServiceError:\n"
+        "        return False\n"
+        "    return balance > amount\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+class TestRunEndpoint:
+    def _client(self, project: Path):
+        from fastapi.testclient import TestClient
+
+        from speks.web.server import create_app
+
+        app = create_app(project, project / "site")
+        return TestClient(app)
+
+    def test_run_default_mock(self, stub_project: Path) -> None:
+        client = self._client(stub_project)
+        resp = client.post(
+            "/api/run",
+            json={
+                "function": "evaluate_credit",
+                "args": {"client_id": "u1", "amount": 1000.0},
+                "mock_overrides": {},
+                "error_overrides": {},
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["result"] is True
+
+    def test_run_with_dotted_mock_override(self, stub_project: Path) -> None:
+        client = self._client(stub_project)
+        resp = client.post(
+            "/api/run",
+            json={
+                "function": "evaluate_credit",
+                "args": {"client_id": "u1", "amount": 1000.0},
+                "mock_overrides": {"CoreBanking.check_balance": 100.0},
+                "error_overrides": {},
+            },
+        )
+        body = resp.json()
+        assert body["success"] is True
+        assert body["result"] is False  # 100 < 1000
+
+    def test_run_with_dotted_error_override(self, stub_project: Path) -> None:
+        client = self._client(stub_project)
+        resp = client.post(
+            "/api/run",
+            json={
+                "function": "evaluate_credit",
+                "args": {"client_id": "u1", "amount": 1000.0},
+                "mock_overrides": {},
+                "error_overrides": {
+                    "CoreBanking.check_balance": {
+                        "error_code": "TIMEOUT",
+                        "error_message": "Timed out",
+                        "http_code": 504,
+                    }
+                },
+            },
+        )
+        body = resp.json()
+        # The user code catches ServiceError and returns False, so success=True.
+        assert body["success"] is True
+        assert body["result"] is False
+        # The call log should record the error.
+        assert any(
+            entry.get("error", {}).get("error_code") == "TIMEOUT"
+            for entry in body["call_log"]
+        )
+
+    def test_call_log_uses_dotted_service_name(self, stub_project: Path) -> None:
+        client = self._client(stub_project)
+        resp = client.post(
+            "/api/run",
+            json={
+                "function": "evaluate_credit",
+                "args": {"client_id": "u1", "amount": 100.0},
+                "mock_overrides": {},
+                "error_overrides": {},
+            },
+        )
+        body = resp.json()
+        services = [entry["service"] for entry in body["call_log"]]
+        assert "CoreBanking.check_balance" in services

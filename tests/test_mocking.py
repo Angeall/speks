@@ -1,12 +1,9 @@
-"""Tests for the mocking engine (Module A)."""
+"""Tests for the mocking engine — ``@service`` / ``@stub`` decorators."""
 
 import pytest
 
+from speks import MockError, ServiceError, service, stub
 from speks.engine.mocking import (
-    ExternalService,
-    MockErrorResponse,
-    MockResponse,
-    ServiceError,
     clear_call_log,
     clear_error_overrides,
     clear_mock_overrides,
@@ -18,75 +15,60 @@ from speks.engine.mocking import (
 )
 
 
-class FakeAPI(ExternalService):
+@service
+class FakeAPI:
     """Minimal external service for testing."""
 
-    def execute(self, user_id: str) -> float:
+    @stub(mock=42.0)
+    def fetch_score(self, user_id: str) -> float:
+        # Real implementation that should never run in mock mode.
         return 9999.0
 
-    def mock(self, user_id: str) -> MockResponse:
-        return MockResponse(data=42.0)
 
+@service
+class FakeAPIWithError:
+    """Service with a default error stub."""
 
-class FakeAPIWithError(ExternalService):
-    """Service with component_name and mock_error."""
-
-    component_name = "MyApp"
-
-    def execute(self, user_id: str) -> float:
+    @stub(
+        mock=42.0,
+        error=MockError("NOT_FOUND", "User not found", http_code=404),
+    )
+    def fetch_score(self, user_id: str) -> float:
         return 9999.0
 
-    def mock(self, user_id: str) -> MockResponse:
-        return MockResponse(data=42.0)
 
-    def mock_error(self, user_id: str) -> MockErrorResponse:
-        return MockErrorResponse(
-            error_code="NOT_FOUND",
-            error_message="User not found",
-            http_code=404,
-        )
+# ---------------------------------------------------------------------------
+# @stub default behaviour
+# ---------------------------------------------------------------------------
 
 
-class TestMockResponse:
-    def test_data_access(self) -> None:
-        r = MockResponse(data={"key": "val"})
-        assert r.data == {"key": "val"}
-
-    def test_json_alias(self) -> None:
-        r = MockResponse(data=[1, 2, 3])
-        assert r.json() == [1, 2, 3]
-
-    def test_defaults(self) -> None:
-        r = MockResponse()
-        assert r.data is None
-        assert r.status_code == 200
-        assert r.headers == {}
-
-
-class TestExternalService:
+class TestStubMockMode:
     def setup_method(self) -> None:
         set_mock_mode(True)
         clear_call_log()
+        clear_mock_overrides()
+        clear_error_overrides()
 
-    def test_call_in_mock_mode(self) -> None:
-        result = FakeAPI().call("u1")
-        assert result == 42.0
+    def test_returns_mock_value(self) -> None:
+        assert FakeAPI().fetch_score("u1") == 42.0
 
-    def test_call_in_real_mode(self) -> None:
+    def test_real_call_when_mock_disabled(self) -> None:
         set_mock_mode(False)
-        result = FakeAPI().call("u1")
-        assert result == 9999.0
-        set_mock_mode(True)  # reset
+        try:
+            assert FakeAPI().fetch_score("u1") == 9999.0
+        finally:
+            set_mock_mode(True)
 
     def test_call_log_recorded(self) -> None:
-        FakeAPI().call("u1")
+        FakeAPI().fetch_score("u1")
         log = get_call_log()
         assert len(log) == 1
-        assert log[0]["service"] == "FakeAPI"
+        assert log[0]["service"] == "FakeAPI.fetch_score"
         assert log[0]["mocked"] is True
+        assert log[0]["result"] == 42.0
 
     def test_clear_log(self) -> None:
-        FakeAPI().call("u1")
+        FakeAPI().fetch_score("u1")
         clear_call_log()
         assert get_call_log() == []
 
@@ -97,9 +79,16 @@ class TestMockModeContext:
 
     def test_toggle(self) -> None:
         set_mock_mode(False)
-        assert is_mock_mode() is False
-        set_mock_mode(True)
+        try:
+            assert is_mock_mode() is False
+        finally:
+            set_mock_mode(True)
         assert is_mock_mode() is True
+
+
+# ---------------------------------------------------------------------------
+# Mock overrides (set_mock_overrides)
+# ---------------------------------------------------------------------------
 
 
 class TestMockOverrides:
@@ -107,170 +96,151 @@ class TestMockOverrides:
         set_mock_mode(True)
         clear_call_log()
         clear_mock_overrides()
+        clear_error_overrides()
 
     def teardown_method(self) -> None:
         clear_mock_overrides()
 
-    def test_override_replaces_mock_data(self) -> None:
-        set_mock_overrides({"FakeAPI": 999.0})
-        result = FakeAPI().call("u1")
-        assert result == 999.0
+    def test_override_replaces_default(self) -> None:
+        set_mock_overrides({"FakeAPI.fetch_score": 999.0})
+        assert FakeAPI().fetch_score("u1") == 999.0
 
     def test_override_logged_as_mocked(self) -> None:
-        set_mock_overrides({"FakeAPI": 999.0})
-        FakeAPI().call("u1")
+        set_mock_overrides({"FakeAPI.fetch_score": 999.0})
+        FakeAPI().fetch_score("u1")
         log = get_call_log()
         assert len(log) == 1
         assert log[0]["mocked"] is True
         assert log[0]["result"] == 999.0
 
-    def test_no_override_falls_back_to_mock(self) -> None:
-        set_mock_overrides({"SomeOtherService": "x"})
-        result = FakeAPI().call("u1")
-        assert result == 42.0  # default mock value
+    def test_no_override_falls_back_to_default(self) -> None:
+        set_mock_overrides({"OtherEntity.method": "x"})
+        assert FakeAPI().fetch_score("u1") == 42.0
 
-    def test_override_with_dict(self) -> None:
-        set_mock_overrides({"FakeAPI": {"score": 300, "incidents": 5}})
-        result = FakeAPI().call("u1")
-        assert result == {"score": 300, "incidents": 5}
+    def test_dict_override_for_non_pydantic_kept_as_dict(self) -> None:
+        set_mock_overrides({"FakeAPI.fetch_score": {"score": 300}})
+        assert FakeAPI().fetch_score("u1") == {"score": 300}
 
     def test_clear_overrides(self) -> None:
-        set_mock_overrides({"FakeAPI": 0.0})
+        set_mock_overrides({"FakeAPI.fetch_score": 0.0})
         clear_mock_overrides()
-        result = FakeAPI().call("u1")
-        assert result == 42.0  # back to default mock
+        assert FakeAPI().fetch_score("u1") == 42.0
+
+    def test_dotted_key_required(self) -> None:
+        # Bare class name should NOT match — keys are dotted.
+        set_mock_overrides({"FakeAPI": 999.0})
+        assert FakeAPI().fetch_score("u1") == 42.0
 
 
-class TestComponentName:
-    def test_default_is_none(self) -> None:
-        assert FakeAPI.component_name is None
-
-    def test_class_var(self) -> None:
-        assert FakeAPIWithError.component_name == "MyApp"
-
-    def test_instance_access(self) -> None:
-        svc = FakeAPIWithError()
-        assert svc.component_name == "MyApp"
+# ---------------------------------------------------------------------------
+# MockError dataclass
+# ---------------------------------------------------------------------------
 
 
-class TestMockErrorResponse:
+class TestMockError:
     def test_fields(self) -> None:
-        err = MockErrorResponse(error_code="E1", error_message="msg", http_code=500)
+        err = MockError(error_code="E1", error_message="msg", http_code=500)
         assert err.error_code == "E1"
         assert err.error_message == "msg"
         assert err.http_code == 500
 
     def test_http_code_optional(self) -> None:
-        err = MockErrorResponse(error_code="E1", error_message="msg")
+        err = MockError(error_code="E1", error_message="msg")
         assert err.http_code is None
 
     def test_frozen(self) -> None:
-        err = MockErrorResponse(error_code="E1", error_message="msg")
+        err = MockError(error_code="E1", error_message="msg")
         with pytest.raises(AttributeError):
             err.error_code = "E2"  # type: ignore[misc]
 
 
+# ---------------------------------------------------------------------------
+# ServiceError + error overrides
+# ---------------------------------------------------------------------------
+
+
 class TestServiceError:
-    def test_raised_from_error_override(self) -> None:
+    def setup_method(self) -> None:
         set_mock_mode(True)
         clear_call_log()
+        clear_mock_overrides()
         clear_error_overrides()
+
+    def teardown_method(self) -> None:
+        clear_error_overrides()
+        clear_mock_overrides()
+
+    def test_raised_from_error_override(self) -> None:
         set_error_overrides({
-            "FakeAPI": {
+            "FakeAPI.fetch_score": {
                 "error_code": "TIMEOUT",
                 "error_message": "Service timed out",
                 "http_code": 504,
             }
         })
         with pytest.raises(ServiceError) as exc_info:
-            FakeAPI().call("u1")
+            FakeAPI().fetch_score("u1")
         err = exc_info.value
         assert err.service_name == "FakeAPI"
+        assert err.method_name == "fetch_score"
         assert err.error_code == "TIMEOUT"
         assert err.error_message == "Service timed out"
         assert err.http_code == 504
-        clear_error_overrides()
 
     def test_error_recorded_in_call_log(self) -> None:
-        set_mock_mode(True)
-        clear_call_log()
-        clear_error_overrides()
         set_error_overrides({
-            "FakeAPI": {
-                "error_code": "ERR",
-                "error_message": "fail",
-            }
+            "FakeAPI.fetch_score": {"error_code": "ERR", "error_message": "fail"}
         })
         with pytest.raises(ServiceError):
-            FakeAPI().call("u1")
+            FakeAPI().fetch_score("u1")
         log = get_call_log()
         assert len(log) == 1
         assert log[0]["error"]["error_code"] == "ERR"
         assert log[0]["result"] is None
         assert log[0]["mocked"] is True
-        clear_error_overrides()
 
-    def test_error_override_takes_precedence_over_mock(self) -> None:
-        set_mock_mode(True)
-        clear_call_log()
-        clear_error_overrides()
-        clear_mock_overrides()
-        set_mock_overrides({"FakeAPI": 999.0})
+    def test_error_takes_precedence_over_mock_override(self) -> None:
+        set_mock_overrides({"FakeAPI.fetch_score": 999.0})
         set_error_overrides({
-            "FakeAPI": {"error_code": "E", "error_message": "m"}
+            "FakeAPI.fetch_score": {"error_code": "E", "error_message": "m"}
         })
         with pytest.raises(ServiceError):
-            FakeAPI().call("u1")
-        clear_error_overrides()
-        clear_mock_overrides()
+            FakeAPI().fetch_score("u1")
 
     def test_no_error_override_returns_normally(self) -> None:
-        set_mock_mode(True)
-        clear_call_log()
-        clear_error_overrides()
-        set_error_overrides({"SomeOtherService": {"error_code": "E", "error_message": "m"}})
-        result = FakeAPI().call("u1")
-        assert result == 42.0
-        clear_error_overrides()
+        set_error_overrides({
+            "OtherEntity.method": {"error_code": "E", "error_message": "m"}
+        })
+        assert FakeAPI().fetch_score("u1") == 42.0
 
     def test_clear_error_overrides(self) -> None:
-        set_mock_mode(True)
-        clear_call_log()
         set_error_overrides({
-            "FakeAPI": {"error_code": "E", "error_message": "m"}
+            "FakeAPI.fetch_score": {"error_code": "E", "error_message": "m"}
         })
         clear_error_overrides()
-        result = FakeAPI().call("u1")
-        assert result == 42.0
+        assert FakeAPI().fetch_score("u1") == 42.0
 
-    def test_mock_error_method(self) -> None:
-        svc = FakeAPIWithError()
-        err = svc.mock_error("u1")
-        assert err is not None
-        assert err.error_code == "NOT_FOUND"
-        assert err.error_message == "User not found"
-        assert err.http_code == 404
+    def test_str_with_http_code(self) -> None:
+        err = MockError(error_code="E1", error_message="msg", http_code=503)
+        exc = ServiceError("MyService", "do_thing", err)
+        s = str(exc)
+        assert "[MyService.do_thing] E1: msg" in s
+        assert "(HTTP 503)" in s
 
-    def test_default_mock_error_returns_none(self) -> None:
-        svc = FakeAPI()
-        assert svc.mock_error("u1") is None
+    def test_str_without_http_code(self) -> None:
+        err = MockError(error_code="E1", error_message="msg")
+        exc = ServiceError("MyService", "do_thing", err)
+        s = str(exc)
+        assert "[MyService.do_thing] E1: msg" in s
+        assert "HTTP" not in s
 
-    def test_service_error_str_with_http_code(self) -> None:
-        err = MockErrorResponse(error_code="E1", error_message="msg", http_code=503)
-        exc = ServiceError("MyService", err)
-        assert "[MyService] E1: msg" in str(exc)
-        assert "(HTTP 503)" in str(exc)
 
-    def test_service_error_str_without_http_code(self) -> None:
-        err = MockErrorResponse(error_code="E1", error_message="msg")
-        exc = ServiceError("MyService", err)
-        assert "[MyService] E1: msg" in str(exc)
-        assert "HTTP" not in str(exc)
+# ---------------------------------------------------------------------------
+# Pydantic coercion
+# ---------------------------------------------------------------------------
 
 
 class TestPydanticCoercion:
-    """Test that dict overrides are coerced to Pydantic models when applicable."""
-
     def setup_method(self) -> None:
         set_mock_mode(True)
         clear_call_log()
@@ -286,30 +256,28 @@ class TestPydanticCoercion:
             name: str
             age: int
 
-        class FetchUser(ExternalService):
-            def execute(self, uid: str) -> UserInfo:
-                pass  # type: ignore[return-value]
+        @service
+        class UserAPI:
+            @stub(mock=UserInfo(name="Alice", age=30))
+            def fetch(self, uid: str) -> UserInfo:
+                ...
 
-            def mock(self, uid: str) -> MockResponse:
-                return MockResponse(data=UserInfo(name="Alice", age=30))
-
-        # Without override, mock returns Pydantic model
-        result = FetchUser().call("u1")
+        # Default mock returns the Pydantic instance.
+        result = UserAPI().fetch("u1")
         assert isinstance(result, UserInfo)
         assert result.name == "Alice"
 
-        # With dict override, should be coerced to Pydantic model
+        # Dict override is coerced back to a UserInfo.
         clear_call_log()
-        set_mock_overrides({"FetchUser": {"name": "Bob", "age": 25}})
-        result = FetchUser().call("u1")
+        set_mock_overrides({"UserAPI.fetch": {"name": "Bob", "age": 25}})
+        result = UserAPI().fetch("u1")
         assert isinstance(result, UserInfo)
         assert result.name == "Bob"
         assert result.age == 25
 
-    def test_dict_override_not_coerced_for_non_pydantic(self) -> None:
-        # FakeAPI returns a float, so dict override should stay as dict
-        set_mock_overrides({"FakeAPI": {"score": 300}})
-        result = FakeAPI().call("u1")
+    def test_dict_override_kept_as_dict_for_non_pydantic_default(self) -> None:
+        set_mock_overrides({"FakeAPI.fetch_score": {"score": 300}})
+        result = FakeAPI().fetch_score("u1")
         assert result == {"score": 300}
         assert isinstance(result, dict)
 
@@ -319,14 +287,48 @@ class TestPydanticCoercion:
         class Info(pydantic.BaseModel):
             name: str
 
-        class FetchInfo(ExternalService):
-            def execute(self) -> Info:
-                pass  # type: ignore[return-value]
+        @service
+        class InfoAPI:
+            @stub(mock=Info(name="test"))
+            def fetch(self) -> Info:
+                ...
 
-            def mock(self) -> MockResponse:
-                return MockResponse(data=Info(name="test"))
+        set_mock_overrides({"InfoAPI.fetch": "raw_string"})
+        assert InfoAPI().fetch() == "raw_string"
 
-        # Non-dict override should be left as-is
-        set_mock_overrides({"FetchInfo": "raw_string"})
-        result = FetchInfo().call()
-        assert result == "raw_string"
+
+# ---------------------------------------------------------------------------
+# Service / stub introspection metadata
+# ---------------------------------------------------------------------------
+
+
+class TestServiceMetadata:
+    def test_service_meta_attached_to_class(self) -> None:
+        meta = getattr(FakeAPI, "_speks_service_meta", None)
+        assert meta is not None
+        assert "description" in meta
+
+    def test_service_description_from_docstring(self) -> None:
+        meta = FakeAPI._speks_service_meta  # type: ignore[attr-defined]
+        assert "Minimal external service" in (meta["description"] or "")
+
+    def test_service_explicit_description(self) -> None:
+        @service(description="Banking system")
+        class CoreBanking:
+            """Original docstring."""
+
+        meta = CoreBanking._speks_service_meta  # type: ignore[attr-defined]
+        assert meta["description"] == "Banking system"
+
+    def test_stub_meta_attached_to_method(self) -> None:
+        # The @wraps wrapper exposes the metadata via the unbound function.
+        meta = getattr(FakeAPIWithError.fetch_score, "_speks_stub_meta", None)
+        assert meta is not None
+        assert meta["mock"] == 42.0
+        assert meta["error"].error_code == "NOT_FOUND"
+
+    def test_stub_preserves_signature_and_docstring(self) -> None:
+        import inspect
+
+        sig = inspect.signature(FakeAPI.fetch_score)
+        assert "user_id" in sig.parameters

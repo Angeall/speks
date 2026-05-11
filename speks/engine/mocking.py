@@ -1,17 +1,35 @@
 """Mocking engine for external service simulation.
 
-Provides base classes that analysts use to define external service calls
-(HTTP APIs, databases, etc.) with automatic mock injection when running
-in test/web mode.
+Analysts declare external service entities with a ``@service`` class
+decorator and mark each outgoing call with a ``@stub`` method decorator.
+At runtime, when mock mode is active, the decorated method returns the
+static ``mock=`` value from the decorator (or an override pushed via
+``set_mock_overrides``) instead of calling the real implementation.
+
+Example::
+
+    from speks import service, stub, MockError, ServiceError
+
+    @service
+    class CoreBanking:
+        '''Core Banking API (blackbox).'''
+
+        @stub(
+            mock=ClientBalance(balance=1500.0, currency="USD"),
+            error=MockError("CLIENT_NOT_FOUND", "Not found", http_code=404),
+        )
+        def check_balance(self, client_id: str) -> ClientBalance:
+            '''Fetch the client's current balance.'''
+            ...  # real implementation (HTTP/SQL)
 """
 
 from __future__ import annotations
 
 import contextvars
 import threading
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from dataclasses import dataclass
+from functools import wraps
+from typing import Any, Callable, TypeVar
 
 # ---------------------------------------------------------------------------
 # Context-aware execution mode
@@ -41,10 +59,11 @@ def is_mock_mode() -> bool:
 
 
 def set_mock_overrides(overrides: dict[str, Any]) -> None:
-    """Set per-service mock data overrides for the current context.
+    """Set per-stub mock-data overrides for the current context.
 
-    *overrides* maps service class names (e.g. ``"VerifierSoldeClient"``)
-    to the value that should be returned instead of calling ``mock()``.
+    Keys are dotted names of the form ``"ClassName.method_name"``
+    (e.g. ``"CoreBanking.check_balance"``).  The associated value
+    replaces the ``mock=`` default from the decorator.
     """
     _mock_overrides.set(overrides)
 
@@ -55,12 +74,13 @@ def clear_mock_overrides() -> None:
 
 
 def set_error_overrides(overrides: dict[str, dict[str, Any]]) -> None:
-    """Set per-service error overrides for the current context.
+    """Set per-stub error overrides for the current context.
 
-    *overrides* maps service class names to dicts with keys:
-    ``error_code``, ``error_message``, and optionally ``http_code``.
-    When a service has an error override, calling it raises
-    :class:`ServiceError` instead of returning data.
+    Keys follow the same dotted convention as ``set_mock_overrides``.
+    Each value is a dict with ``error_code``, ``error_message`` and an
+    optional ``http_code``.  When an error override is active for a
+    stub, calling the stub raises :class:`ServiceError` instead of
+    returning data.
     """
     _error_overrides.set(overrides)
 
@@ -71,41 +91,13 @@ def clear_error_overrides() -> None:
 
 
 # ---------------------------------------------------------------------------
-# MockResponse
+# MockError & ServiceError
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class MockResponse:
-    """Canned response returned by an ExternalService in mock mode.
-
-    Parameters
-    ----------
-    data:
-        Arbitrary payload (dict, list, scalar …) that the mock returns.
-    status_code:
-        Simulated HTTP status code (useful for HTTP-style services).
-    headers:
-        Optional response headers.
-    """
-
-    data: Any = None
-    status_code: int = 200
-    headers: dict[str, str] = field(default_factory=dict)
-
-    def json(self) -> Any:
-        """Return *data* — convenience alias that mirrors ``requests``."""
-        return self.data
-
-
-# ---------------------------------------------------------------------------
-# MockErrorResponse & ServiceError
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class MockErrorResponse:
-    """Describes an error returned by an ExternalService.
+class MockError:
+    """Describes an error that a stub can raise in mock mode.
 
     Parameters
     ----------
@@ -124,19 +116,21 @@ class MockErrorResponse:
 
 
 class ServiceError(Exception):
-    """Raised when an ExternalService is called in error-mock mode.
+    """Raised when a stub is called with an active error override.
 
-    Carries the structured error information so that callers (business
-    rules) can inspect ``error_code``, ``error_message``, and
-    ``http_code``.
+    Carries the structured error information so that business rules can
+    inspect ``service_name``, ``method_name``, ``error_code``,
+    ``error_message`` and ``http_code``.
     """
 
-    def __init__(self, service_name: str, error: MockErrorResponse) -> None:
+    def __init__(self, service_name: str, method_name: str, error: MockError) -> None:
         self.service_name = service_name
+        self.method_name = method_name
         self.error_code = error.error_code
         self.error_message = error.error_message
         self.http_code = error.http_code
-        parts = [f"[{service_name}] {error.error_code}: {error.error_message}"]
+        full_name = f"{service_name}.{method_name}"
+        parts = [f"[{full_name}] {error.error_code}: {error.error_message}"]
         if error.http_code is not None:
             parts.append(f"(HTTP {error.http_code})")
         super().__init__(" ".join(parts))
@@ -163,7 +157,7 @@ def clear_call_log() -> None:
 
 
 def _record_call(
-    service_name: str,
+    full_name: str,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
     result: Any,
@@ -173,7 +167,7 @@ def _record_call(
 ) -> None:
     with _call_log_lock:
         entry: dict[str, Any] = {
-            "service": service_name,
+            "service": full_name,
             "args": args,
             "kwargs": kwargs,
             "result": result,
@@ -185,116 +179,167 @@ def _record_call(
 
 
 # ---------------------------------------------------------------------------
-# ExternalService
+# Pydantic override coercion
 # ---------------------------------------------------------------------------
 
 
-def _maybe_coerce_to_pydantic(
-    service: "ExternalService",
-    override: dict[str, Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> Any:
-    """If the service's default mock returns a Pydantic model, reconstruct it from *override*.
+def _maybe_coerce_to_pydantic(default_mock: Any, override: Any) -> Any:
+    """Reconstruct a Pydantic model from *override* when *default_mock* is one.
 
-    Falls back to returning the dict unchanged if the mock doesn't use Pydantic
-    or if construction fails.
+    The playground sends field overrides as plain JSON dicts.  If the
+    stub's static ``mock=`` value is a Pydantic ``BaseModel`` instance,
+    we rebuild an instance of the same class so that business code can
+    keep accessing fields via attribute syntax.
+
+    When a field expects a complex type (``list``, ``dict``) but the
+    playground sent a string (from a text ``<input>``), we attempt to
+    JSON-parse string values before validation so that ``"[1, 2]"``
+    becomes ``[1, 2]``.
     """
+    if not isinstance(override, dict):
+        return override
+    if default_mock is None:
+        return override
+    model_cls = type(default_mock)
+    if not (hasattr(model_cls, "model_validate") and hasattr(model_cls, "model_fields")):
+        return override
+
+    # First attempt: validate as-is.
     try:
-        response = service.mock(*args, **kwargs)
-        default_data = response.data
-        model_cls = type(default_data)
-        # Check if it's a Pydantic BaseModel (duck-type check to avoid hard dep)
-        if hasattr(model_cls, "model_validate") and hasattr(model_cls, "model_fields"):
-            return model_cls.model_validate(override)
+        return model_cls.model_validate(override)
     except Exception:
         pass
-    return override
+
+    # Second attempt: JSON-parse (or ast.literal_eval) string values
+    # that should be complex types.  The playground renders every field
+    # as a text <input>, so ``list[str]`` arrives as ``'["a", "b"]'``
+    # (JSON) or ``"['a', 'b']"`` (Python repr).
+    import ast as _ast
+    import json as _json
+
+    patched = dict(override)
+    for key, value in patched.items():
+        if not isinstance(value, str):
+            continue
+        stripped = value.strip()
+        if not stripped or stripped[:1] not in ("[", "{", "("):
+            continue
+        # Try JSON first (canonical), then Python literal (repr fallback).
+        for parser in (_json.loads, _ast.literal_eval):
+            try:
+                patched[key] = parser(stripped)
+                break
+            except Exception:
+                continue
+    try:
+        return model_cls.model_validate(patched)
+    except Exception:
+        return override
 
 
-class ExternalService(ABC):
-    """Base class for declaring an external service dependency.
+# ---------------------------------------------------------------------------
+# Decorators
+# ---------------------------------------------------------------------------
 
-    Subclasses must implement:
+_SERVICE_META = "_speks_service_meta"
+_STUB_META = "_speks_stub_meta"
 
-    * ``execute(*args, **kwargs)`` — the *real* call (HTTP, SQL, …).
-    * ``mock(*args, **kwargs)``    — returns a :class:`MockResponse`.
+F = TypeVar("F", bound=Callable[..., Any])
 
-    Optionally:
 
-    * ``mock_error(*args, **kwargs)`` — returns a :class:`MockErrorResponse`
-      describing the default error scenario for this service.
-    * ``component_name`` — a class variable grouping related services under
-      a logical component (e.g. ``"CoreBanking"``).  When set, the
-      playground displays the service as ``ComponentName / ServiceName``.
+def service(cls: type | None = None, *, description: str | None = None) -> Any:
+    """Class decorator marking a class as an external service entity.
 
-    At runtime the analyst calls :meth:`call`; the engine transparently
-    delegates to ``execute`` or ``mock`` depending on the active mode.
+    Usage::
+
+        @service
+        class CoreBanking:
+            '''Core Banking API.'''
+
+        @service(description="Inventory and fulfilment")
+        class Warehouse:
+            ...
+
+    The decorator attaches a ``_speks_service_meta`` attribute on the
+    class and is otherwise a no-op at runtime — ``@stub`` on the methods
+    does all the heavy lifting.  Static analysis tools recognise the
+    decorator and use the class name as the entity grouping.
     """
 
-    component_name: ClassVar[str | None] = None
+    def wrap(klass: type) -> type:
+        setattr(
+            klass,
+            _SERVICE_META,
+            {"description": description if description is not None else klass.__doc__},
+        )
+        return klass
 
-    @abstractmethod
-    def execute(self, *args: Any, **kwargs: Any) -> Any:
-        """Perform the real external call."""
+    if cls is None:
+        return wrap
+    return wrap(cls)
 
-    @abstractmethod
-    def mock(self, *args: Any, **kwargs: Any) -> MockResponse:
-        """Return a canned :class:`MockResponse`."""
 
-    def mock_error(self, *args: Any, **kwargs: Any) -> MockErrorResponse | None:
-        """Return a canned :class:`MockErrorResponse`, or ``None``.
+def stub(*, mock: Any = None, error: MockError | None = None) -> Callable[[F], F]:
+    """Method decorator marking a service method as a mockable stub.
 
-        Override this to document the error scenario for this service.
-        By default no error mock is provided.
-        """
-        return None
+    Parameters
+    ----------
+    mock:
+        Static value returned in mock mode.  May be any Python object
+        (Pydantic model instance, dataclass, dict, scalar, ``None``).
+    error:
+        Optional default :class:`MockError` surfaced in the playground
+        so analysts can simulate failure scenarios with one click.
 
-    def call(self, *args: Any, **kwargs: Any) -> Any:
-        """Dispatch to ``mock`` or ``execute`` based on the current mode.
+    The wrapped method keeps its original signature and docstring.  In
+    mock mode, the body of the method is never executed — either the
+    override, the ``mock=`` default, or a :class:`ServiceError` is
+    returned/raised.  Out of mock mode the real body runs normally.
+    """
 
-        When mock mode is active, user-supplied overrides (set via
-        :func:`set_mock_overrides`) take precedence over the class's
-        ``mock()`` method.
+    def decorator(func: F) -> F:
+        meta = {"mock": mock, "error": error}
 
-        If an error override is active for this service, a
-        :class:`ServiceError` is raised instead of returning data.
-        """
-        class_name = type(self).__name__
+        @wraps(func)
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            service_name = type(self).__name__
+            method_name = func.__name__
+            full_name = f"{service_name}.{method_name}"
 
-        if is_mock_mode():
-            # Check error overrides first
-            error_ovr = _error_overrides.get({})
-            if class_name in error_ovr:
-                err_data = error_ovr[class_name]
-                err = MockErrorResponse(
-                    error_code=err_data.get("error_code", "UNKNOWN"),
-                    error_message=err_data.get("error_message", "Unknown error"),
-                    http_code=err_data.get("http_code"),
-                )
-                _record_call(class_name, args, kwargs, None, mocked=True, error={
-                    "error_code": err.error_code,
-                    "error_message": err.error_message,
-                    "http_code": err.http_code,
-                })
-                raise ServiceError(class_name, err)
+            if is_mock_mode():
+                # Error overrides take precedence over data overrides.
+                err_ovr = _error_overrides.get({})
+                if full_name in err_ovr:
+                    ed = err_ovr[full_name]
+                    err = MockError(
+                        error_code=ed.get("error_code", "UNKNOWN"),
+                        error_message=ed.get("error_message", "Unknown error"),
+                        http_code=ed.get("http_code"),
+                    )
+                    _record_call(
+                        full_name, args, kwargs, None, mocked=True,
+                        error={
+                            "error_code": err.error_code,
+                            "error_message": err.error_message,
+                            "http_code": err.http_code,
+                        },
+                    )
+                    raise ServiceError(service_name, method_name, err)
 
-            # Normal mock overrides
-            overrides = _mock_overrides.get({})
-            if class_name in overrides:
-                result = overrides[class_name]
-                # If the override is a dict, try to reconstruct the Pydantic
-                # model that the default mock would return so that user code
-                # can access fields via attribute syntax (result.field_name).
-                if isinstance(result, dict):
-                    result = _maybe_coerce_to_pydantic(self, result, args, kwargs)
-                _record_call(class_name, args, kwargs, result, mocked=True)
-                return result
-            response = self.mock(*args, **kwargs)
-            result = response.data
-            _record_call(class_name, args, kwargs, result, mocked=True)
+                m_ovr = _mock_overrides.get({})
+                if full_name in m_ovr:
+                    result = _maybe_coerce_to_pydantic(mock, m_ovr[full_name])
+                    _record_call(full_name, args, kwargs, result, mocked=True)
+                    return result
+
+                _record_call(full_name, args, kwargs, mock, mocked=True)
+                return mock
+
+            result = func(self, *args, **kwargs)
+            _record_call(full_name, args, kwargs, result, mocked=False)
             return result
-        else:
-            result = self.execute(*args, **kwargs)
-            _record_call(class_name, args, kwargs, result, mocked=False)
-            return result
+
+        setattr(wrapper, _STUB_META, meta)
+        return wrapper  # type: ignore[return-value]
+
+    return decorator

@@ -2,9 +2,9 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockResponse, ServiceError
+from speks import ServiceError, service, stub
 
-from .rates import FetchZoneMapping
+from .rates import ShippingAPI
 
 
 class WarehouseStock(BaseModel):
@@ -23,36 +23,27 @@ class CustomsClearance(BaseModel):
     restricted: bool
 
 
-class CheckWarehouseStock(ExternalService):
-    """Check stock availability at the nearest warehouse (Blackbox)."""
+@service
+class LogisticsAPI:
+    """Logistics and customs API (blackbox)."""
 
-    component_name = "Warehouse"
+    @stub(mock=WarehouseStock(
+        in_stock=True,
+        warehouse_zip="10001",
+        processing_days=1,
+    ))
+    def check_warehouse_stock(self, product_id: str, dest_zip: str) -> WarehouseStock:
+        """Check stock availability at the nearest warehouse."""
+        ...
 
-    def execute(self, product_id: str, dest_zip: str) -> WarehouseStock:
-        pass  # type: ignore[return-value]
-
-    def mock(self, product_id: str, dest_zip: str) -> MockResponse:
-        return MockResponse(data=WarehouseStock(
-            in_stock=True,
-            warehouse_zip="10001",
-            processing_days=1,
-        ))
-
-
-class CheckCustomsClearance(ExternalService):
-    """Estimate customs processing time for international shipments (Blackbox)."""
-
-    component_name = "CustomsAPI"
-
-    def execute(self, origin_country: str, dest_country: str, value_usd: float) -> CustomsClearance:
-        pass  # type: ignore[return-value]
-
-    def mock(self, origin_country: str, dest_country: str, value_usd: float) -> MockResponse:
-        return MockResponse(data=CustomsClearance(
-            clearance_days=0,
-            duties_applicable=False,
-            restricted=False,
-        ))
+    @stub(mock=CustomsClearance(
+        clearance_days=0,
+        duties_applicable=False,
+        restricted=False,
+    ))
+    def check_customs(self, origin_country: str, dest_country: str, value_usd: float) -> CustomsClearance:
+        """Estimate customs processing time for an international shipment."""
+        ...
 
 
 class DeliveryEstimate(BaseModel):
@@ -79,7 +70,8 @@ def estimate_delivery(
     Considers warehouse processing, transit time (based on zone and service),
     and customs clearance for international orders.
     """
-    stock = CheckWarehouseStock().call(product_id, dest_zip)
+    logistics = LogisticsAPI()
+    stock = logistics.check_warehouse_stock(product_id, dest_zip)
 
     if not stock.in_stock:
         return DeliveryEstimate(
@@ -87,9 +79,8 @@ def estimate_delivery(
             reason="Product not in stock at any nearby warehouse",
         )
 
-    zone_info = FetchZoneMapping().call(stock.warehouse_zip, dest_zip)
+    zone_info = ShippingAPI().fetch_zone(stock.warehouse_zip, dest_zip)
 
-    # Transit days based on service level and zone
     transit_table = {
         "standard": {1: 3, 2: 4, 3: 5, 4: 6, 5: 7},
         "express": {1: 1, 2: 2, 3: 2, 4: 3, 5: 3},
@@ -98,11 +89,10 @@ def estimate_delivery(
     zone = min(zone_info.zone, 5)
     transit_days = transit_table.get(service_level, transit_table["standard"]).get(zone, 7)
 
-    # Customs clearance for cross-border
     customs_days = 0
     if zone_info.cross_border:
         try:
-            customs = CheckCustomsClearance().call(
+            customs = logistics.check_customs(
                 zone_info.origin_country,
                 zone_info.dest_country,
                 order_value_usd,
@@ -114,7 +104,7 @@ def estimate_delivery(
                 )
             customs_days = customs.clearance_days
         except ServiceError:
-            customs_days = 5  # conservative fallback
+            customs_days = 5
 
     total_days = stock.processing_days + transit_days + customs_days
 

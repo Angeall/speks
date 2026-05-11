@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from speks import ExternalService, MockResponse
+from speks import service, stub
 
 from .credit import evaluate_credit
 
@@ -14,24 +14,19 @@ class PEPStatus(BaseModel):
     level: str | None = None
 
 
-class CheckBlacklist(ExternalService):
-    """Call to the sanctions registry (Blackbox)."""
+@service
+class ComplianceService:
+    """Regulatory compliance API (sanctions + PEP)."""
 
-    def execute(self, client_id: str) -> bool:
-        pass  # type: ignore[return-value]
+    @stub(mock=False)
+    def check_blacklist(self, client_id: str) -> bool:
+        """Check the sanctions blacklist for a client."""
+        ...
 
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=False)  # False = not on blacklist
-
-
-class CheckPEP(ExternalService):
-    """Call to the Politically Exposed Persons registry (Blackbox)."""
-
-    def execute(self, client_id: str) -> PEPStatus:
-        pass  # type: ignore[return-value]
-
-    def mock(self, client_id: str) -> MockResponse:
-        return MockResponse(data=PEPStatus(is_pep=False, level=None))
+    @stub(mock=PEPStatus(is_pep=False, level=None))
+    def check_pep(self, client_id: str) -> PEPStatus:
+        """Look up the Politically Exposed Persons registry."""
+        ...
 
 
 class ComplianceResult(BaseModel):
@@ -47,8 +42,9 @@ def check_compliance(client_id: str) -> ComplianceResult:
 
     Verifies against the sanctions blacklist and PEP status.
     """
-    on_blacklist = CheckBlacklist().call(client_id)
-    pep_info = CheckPEP().call(client_id)
+    compliance = ComplianceService()
+    on_blacklist = compliance.check_blacklist(client_id)
+    pep_info = compliance.check_pep(client_id)
 
     return ComplianceResult(
         compliant=not on_blacklist and not pep_info.is_pep,
