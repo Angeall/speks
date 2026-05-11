@@ -4,12 +4,21 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from speks.i18n import set_locale
 from speks.mkdocs_plugins.plantuml import (
     SpeksPlantUMLPlugin,
     plantuml_encode,
     _render_plantuml_block,
     _strip_html_tags,
 )
+
+
+@pytest.fixture(autouse=True)
+def _english_locale():
+    """Force the English locale so assertions match the EN catalog."""
+    set_locale("en")
+    yield
+    set_locale("fr")
 
 
 class TestPlantUMLEncode:
