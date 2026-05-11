@@ -404,7 +404,7 @@ def _collect_entity_aliases(
             continue
         for target in stmt.targets:
             if isinstance(target, ast.Name):
-                aliases[target.id] = class_name  # type: ignore[assignment]
+                aliases[target.id] = class_name
     return aliases
 
 
